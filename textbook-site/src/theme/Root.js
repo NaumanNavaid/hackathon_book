@@ -1,5 +1,5 @@
 import React from 'react';
-import Chatbot from '../components/Chatbot';
+import Chatbot from '../components/chatbot';
 
 // Default implementation, that you can customize
 export default function Root({children}) {
