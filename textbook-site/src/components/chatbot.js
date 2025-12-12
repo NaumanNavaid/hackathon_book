@@ -62,7 +62,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
-import './Chatbot.css';
+import './chatbot.css';
 
 export default function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
