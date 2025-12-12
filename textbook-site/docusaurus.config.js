@@ -11,8 +11,12 @@ const config = {
   url: 'https://your-site-url.com',
   baseUrl: '/',
 
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
 
   i18n: {
     defaultLocale: 'en',
@@ -85,7 +89,11 @@ const config = {
             position: 'left',
             label: 'Book',
           },
-          {to: '/blog', label: 'Blog', position: 'left'},
+          {
+            to: '/blog',
+            label: 'Blog',
+            position: 'left',
+          },
           {
             href: 'https://github.com/your-repo',
             label: 'GitHub',

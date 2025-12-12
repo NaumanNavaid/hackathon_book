@@ -7,7 +7,11 @@
       "Bash(.specify/scripts/bash/create-phr.sh:*)",
       "Bash(npx create-docusaurus@latest:*)",
       "SlashCommand(/sp.phr --title \"User explains MDX template literal fix\" --stage general --feature none)",
-      "Bash(findstr /N /C:\"{x}\" textbook-sitedocspart-iefficient-intelligence.mdx)"
+      "Bash(findstr /N /C:\"{x}\" textbook-sitedocspart-iefficient-intelligence.mdx)",
+      "Bash(npm install:*)",
+      "Bash(npm run build)",
+      "Bash(npm start)",
+      "Bash(npm start:*)"
     ],
     "deny": [],
     "ask": []
