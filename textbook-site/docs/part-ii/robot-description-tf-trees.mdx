@@ -1,0 +1,61 @@
+---
+title: "Chapter 05 : URDF, Robot Description, TF Trees"
+sidebar_position: 4
+difficulty: "intermediate"
+estimatedTime: 60
+prerequisites: ["chapter-3-communication-patterns"]
+objectives:
+  - "Master URDF (Unified Robot Description Format) modeling"
+  - "Understand coordinate systems and transformations"
+  - "Learn TF (Transform) tree concepts and implementation"
+  - "Create complete robot models with proper kinematics"
+---
+
+# Chapter 05 : URDF, Robot Description, TF Trees
+
+## Introduction
+
+Robot description is a fundamental aspect of robotics that enables visualization, simulation, and control of robotic systems. The Unified Robot Description Format (URDF) provides a standardized way to define robot geometry, kinematics, and dynamics. Combined with the Transform (TF) library, it creates a powerful system for managing coordinate relationships in complex robotic systems. This chapter covers the complete pipeline from robot modeling to coordinate management.
+
+:::info
+URDF and TF form the backbone of ROS 2 robotics. Mastering these concepts is essential for anyone working with robotic systems, as they provide the foundation for everything from simulation to real-world robot control.
+:::
+
+## 5.1 URDF Fundamentals
+
+### 5.1.1 URDF Structure and Components
+
+URDF uses XML to describe robot models with links (rigid bodies) and joints (connections between links):
+
+**Diagram: URDF Tree Structure**
+
+```text
+Robot Model (root)
+├── Link: base_link
+│   ├── Visual
+│   │   ├── Geometry
+│   │   └── Material
+│   ├── Collision
+│   │   └── Geometry
+│   └── Inertial
+│       ├── Mass
+│       └── Inertia
+│
+├── Joint: base_to_chassis
+│   ├── Parent: base_link
+│   ├── Child: chassis_link
+│   ├── Type: fixed
+│   └── Origin
+│
+├── Link: chassis_link
+│   ├── Visual/Collision/Inertial
+│   └── ...
+│
+├── Joint: chassis_to_wheel_1
+│   ├── Parent: chassis_link
+│   ├── Child: wheel_1_link
+│   ├── Type: continuous
+│   └── Axis
+│
+└── Link: wheel_1_link
+    └── Visual/Collision/Inertial

@@ -1,0 +1,101 @@
+/* Container Background */
+.bookContainer {
+  background-color: var(--ifm-background-color);
+  min-height: 100vh;
+}
+
+.mainTitle {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+/* --- Part Banners --- */
+.partSection {
+  margin-bottom: 4rem;
+}
+
+.partHeader {
+  padding: 3rem;
+  border-radius: 16px;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+/* Gradients for the banners */
+.partBlue   { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); }
+.partRed    { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); }
+.partPurple { background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%); }
+
+/* --- Chapter Cards --- */
+.cardLink {
+  text-decoration: none !important; 
+  color: inherit !important;
+  display: block;
+  height: 100%;
+}
+
+.chapterCard {
+  background: var(--ifm-card-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.5rem;
+  height: 100%;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.chapterCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+  border-color: var(--ifm-color-primary);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.chapterLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ifm-color-emphasis-600);
+  font-weight: bold;
+}
+
+.cardTitle {
+  font-size: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  padding-top: 1rem;
+}
+
+.timePill {
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-700);
+  background: var(--ifm-color-emphasis-100);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+}
+
+.arrow {
+  color: var(--ifm-color-primary);
+  font-size: 1.2rem;
+  transition: transform 0.2s;
+}
+
+.chapterCard:hover .arrow {
+  transform: translateX(5px);
+}

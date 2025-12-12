@@ -1,0 +1,1095 @@
+---
+title: "Chapter 14 : Computer Vision for Robots"
+part: 4
+chapter: 13
+difficulty: "advanced"
+prerequisites: ["chapter-12-digital-twin-development", "chapter-3-sensors-actuators-physical-limits"]
+estimatedTime: 60
+objectives:
+  - "Master computer vision fundamentals for robotic applications"
+  - "Implement object detection and recognition systems"
+  - "Develop visual SLAM capabilities for navigation"
+  - "Apply deep learning for robotic perception"
+---
+
+# Chapter 14: Computer Vision for Robots
+
+## 14.1 Computer Vision Fundamentals
+
+### 14.1.1 Vision in Robotics
+
+Computer vision enables robots to perceive, understand, and interact with their environment through visual information. Unlike human vision, robotic vision systems must extract quantitatively precise information for decision-making and control.
+
+:::info
+Robotic computer vision differs from general computer vision in its emphasis on real-time performance, 3D spatial understanding, and action-oriented perception. While general CV focuses on image interpretation, robotic CV must convert visual information into actionable control signals.
+:::
+
+### 14.1.2 Image Formation and Camera Models
+
+Understanding how cameras capture the physical world is fundamental:
+
+#### Pinhole Camera Model
+The pinhole camera model provides the mathematical foundation for understanding image formation:
+
+$$
+x = f * (X / Z)
+y = f * (Y / Z)$$
+
+Where:
+- (x, y) = Image coordinates
+- (X, Y, Z) = World coordinates
+- f = Focal length
+
+```python
+class PinholeCamera:
+    def __init__(self, focal_length, image_width, image_height):
+        self.focal_length = focal_length
+        self.image_width = image_width
+        self.image_height = image_height
+
+        # Camera intrinsic matrix
+        self.intrinsic_matrix = np.array([
+            [focal_length, 0, image_width / 2],
+            [0, focal_length, image_height / 2],
+            [0, 0, 1]
+        ])
+
+        # Camera extrinsic matrix (position and orientation)
+        self.extrinsic_matrix = np.eye(4)
+
+    def world_to_pixel(self, world_point):
+        """Convert world coordinates to pixel coordinates"""
+        # Convert world point to homogeneous coordinates
+        world_homo = np.append(world_point, 1)
+
+        # Apply extrinsic transformation (world to camera)
+        camera_point = self.extrinsic_matrix @ world_homo
+        camera_point = camera_point[:3]
+
+        # Apply intrinsic projection (camera to image)
+        image_point_homo = self.intrinsic_matrix @ camera_point
+        image_point = image_point_homo / image_point_homo[2]
+
+        # Convert to pixel coordinates
+        pixel_x = int(image_point[0])
+        pixel_y = int(image_point[1])
+
+        return pixel_x, pixel_y
+
+    def pixel_to_ray(self, pixel_x, pixel_y):
+        """Convert pixel coordinates to camera ray"""
+        # Convert pixel to normalized coordinates
+        x = (pixel_x - self.intrinsic_matrix[0, 2]) / self.intrinsic_matrix[0, 0]
+        y = (pixel_y - self.intrinsic_matrix[1, 2]) / self.intrinsic_matrix[1, 1]
+
+        # Create ray in camera coordinates
+        ray_direction = np.array([x, y, 1.0])
+        ray_direction = ray_direction / np.linalg.norm(ray_direction)
+
+        # Transform to world coordinates
+        rotation = self.extrinsic_matrix[:3, :3]
+        translation = self.extrinsic_matrix[:3, 3]
+
+        world_origin = translation
+        world_direction = rotation @ ray_direction
+
+        return world_origin, world_direction
+
+    def project_3d_points(self, points_3d):
+        """Project 3D points to image plane"""
+        pixels = []
+        depths = []
+
+        for point in points_3d:
+            pixel_x, pixel_y = self.world_to_pixel(point)
+            pixels.append([pixel_x, pixel_y])
+
+            # Calculate depth
+            camera_point = self.extrinsic_matrix @ np.append(point, 1)
+            depths.append(camera_point[2])
+
+        return np.array(pixels), np.array(depths)
+```
+
+#### Lens Distortion Correction
+Real cameras exhibit lens distortion that must be corrected:
+
+```python
+class LensDistortionModel:
+    def __init__(self, k1=0.0, k2=0.0, k3=0.0, p1=0.0, p2=0.0):
+        # Radial distortion coefficients
+        self.k1 = k1
+        self.k2 = k2
+        self.k3 = k3
+
+        # Tangential distortion coefficients
+        self.p1 = p1
+        self.p2 = p2
+
+    def distort_point(self, x, y):
+        """Apply lens distortion to normalized coordinates"""
+        r_squared = x**2 + y**2
+
+        # Radial distortion
+        radial_factor = 1 + self.k1 * r_squared + self.k2 * r_squared**2 + self.k3 * r_squared**3
+        x_distorted = x * radial_factor
+        y_distorted = y * radial_factor
+
+        # Tangential distortion
+        x_distorted += 2 * self.p1 * x * y + self.p2 * (r_squared + 2 * x**2)
+        y_distorted += self.p1 * (r_squared + 2 * y**2) + 2 * self.p2 * x * y
+
+        return x_distorted, y_distorted
+
+    def undistort_point(self, x_distorted, y_distorted, iterations=10):
+        """Remove lens distortion using iterative method"""
+        x, y = x_distorted, y_distorted
+
+        for _ in range(iterations):
+            # Calculate distortion at current estimate
+            x_d, y_d = self.distort_point(x, y)
+
+            # Update estimate
+            x = x + (x_distorted - x_d)
+            y = y + (y_distorted - y_d)
+
+        return x, y
+
+    def undistort_image(self, image):
+        """Undistort entire image"""
+        height, width = image.shape[:2]
+        undistorted = np.zeros_like(image)
+
+        # Create coordinate grids
+        y_coords, x_coords = np.mgrid[0:height, 0:width]
+
+        # Convert to normalized coordinates
+        cx, cy = width // 2, height // 2
+        fx = fy = max(width, height)  # Approximate focal length
+
+        x_norm = (x_coords - cx) / fx
+        y_norm = (y_coords - cy) / fy
+
+        # Undistort coordinates
+        for i in range(height):
+            for j in range(width):
+                x_undist, y_undist = self.undistort_point(x_norm[i, j], y_norm[i, j])
+
+                # Convert back to pixel coordinates
+                px = int(x_undist * fx + cx)
+                py = int(y_undist * fy + cy)
+
+                # Check bounds
+                if 0 <= px < width and 0 <= py < height:
+                    undistorted[i, j] = image[py, px]
+
+        return undistorted
+```
+
+## 14.2 Image Processing and Feature Extraction
+
+### 14.2.1 Preprocessing Techniques
+
+Image preprocessing prepares raw visual data for higher-level analysis:
+
+```python
+class ImagePreprocessor:
+    def __init__(self):
+        self.gaussian_kernel = None
+        self.sobel_x = None
+        self.sobel_y = None
+
+    def preprocess_pipeline(self, image, operations=None):
+        """Apply preprocessing pipeline"""
+        if operations is None:
+            operations = ['denoise', 'normalize', 'sharpen']
+
+        processed = image.copy()
+
+        for operation in operations:
+            if operation == 'denoise':
+                processed = self.denoise(processed)
+            elif operation == 'normalize':
+                processed = self.normalize(processed)
+            elif operation == 'sharpen':
+                processed = self.sharpen(processed)
+            elif operation == 'histogram_equalization':
+                processed = self.histogram_equalization(processed)
+            elif operation == 'contrast_enhancement':
+                processed = self.enhance_contrast(processed)
+
+        return processed
+
+    def denoise(self, image):
+        """Apply Gaussian denoising"""
+        # Create Gaussian kernel
+        if self.gaussian_kernel is None:
+            size = 5
+            sigma = 1.0
+            self.gaussian_kernel = self._create_gaussian_kernel(size, sigma)
+
+        # Apply convolution
+        return self._convolve(image, self.gaussian_kernel)
+
+    def _create_gaussian_kernel(self, size, sigma):
+        """Create Gaussian kernel"""
+        kernel = np.zeros((size, size))
+        center = size // 2
+
+        for i in range(size):
+            for j in range(size):
+                x, y = i - center, j - center
+                kernel[i, j] = np.exp(-(x**2 + y**2) / (2 * sigma**2))
+
+        return kernel / kernel.sum()
+
+    def edge_detection(self, image, method='canny', **kwargs):
+        """Detect edges in image"""
+        if method == 'sobel':
+            return self._sobel_edge_detection(image)
+        elif method == 'canny':
+            return self._canny_edge_detection(image, **kwargs)
+        elif method == 'laplacian':
+            return self._laplacian_edge_detection(image)
+
+    def _canny_edge_detection(self, image, low_threshold=50, high_threshold=150):
+        """Canny edge detection implementation"""
+        # Convert to grayscale if needed
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        # Gaussian blur
+        blurred = cv2.GaussianBlur(gray, (5, 5), 1.4)
+
+        # Gradient calculation using Sobel
+        grad_x = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=3)
+
+        gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+        gradient_direction = np.arctan2(grad_y, grad_x)
+
+        # Non-maximum suppression
+        suppressed = self._non_maximum_suppression(gradient_magnitude, gradient_direction)
+
+        # Double thresholding
+        strong_edges = (suppressed > high_threshold)
+        weak_edges = (suppressed >= low_threshold) & (suppressed <= high_threshold)
+
+        # Edge tracking by hysteresis
+        edges = self._edge_tracking(strong_edges, weak_edges)
+
+        return edges.astype(np.uint8) * 255
+
+    def _non_maximum_suppression(self, magnitude, direction):
+        """Non-maximum suppression for edge thinning"""
+        suppressed = np.zeros_like(magnitude)
+        angle = np.rad2deg(direction) % 180
+
+        for i in range(1, magnitude.shape[0] - 1):
+            for j in range(1, magnitude.shape[1] - 1):
+                # Determine gradient direction
+                if (0 <= angle[i, j] < 22.5) or (157.5 <= angle[i, j] <= 180):
+                    q, r = magnitude[i, j + 1], magnitude[i, j - 1]
+                elif 22.5 <= angle[i, j] < 67.5:
+                    q, r = magnitude[i + 1, j - 1], magnitude[i - 1, j + 1]
+                elif 67.5 <= angle[i, j] < 112.5:
+                    q, r = magnitude[i + 1, j], magnitude[i - 1, j]
+                elif 112.5 <= angle[i, j] < 157.5:
+                    q, r = magnitude[i - 1, j - 1], magnitude[i + 1, j + 1]
+
+                # Suppress non-maximum pixels
+                if (magnitude[i, j] >= q) and (magnitude[i, j] >= r):
+                    suppressed[i, j] = magnitude[i, j]
+
+        return suppressed
+```
+
+### 14.2.2 Feature Detection and Description
+
+Extracting stable features is crucial for visual odometry and object recognition:
+
+```python
+class FeatureExtractor:
+    def __init__(self):
+        self.feature_detectors = {
+            'harris': self._harris_corner_detector,
+            'shi_tomasi': self._shi_tomasi_corner_detector,
+            'sift': self._sift_detector,
+            'orb': self._orb_detector,
+            'surf': self._surf_detector
+        }
+
+    def extract_features(self, image, method='orb', max_features=500):
+        """Extract features from image"""
+        if method not in self.feature_detectors:
+            raise ValueError(f"Unsupported feature detection method: {method}")
+
+        keypoints, descriptors = self.feature_detectors[method](image, max_features)
+
+        return keypoints, descriptors
+
+    def _orb_detector(self, image, max_features):
+        """ORB feature detector implementation"""
+        import cv2
+
+        # Initialize ORB detector
+        orb = cv2.ORB_create(nfeatures=max_features)
+
+        # Find keypoints and compute descriptors
+        keypoints, descriptors = orb.detectAndCompute(image, None)
+
+        return keypoints, descriptors
+
+    def _harris_corner_detector(self, image, max_features):
+        """Harris corner detector"""
+        import cv2
+
+        # Convert to grayscale
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        # Harris corner detection
+        corners = cv2.goodFeaturesToTrack(
+            gray,
+            maxCorners=max_features,
+            qualityLevel=0.01,
+            minDistance=10,
+            blockSize=3
+        )
+
+        # Convert to keypoints
+        keypoints = []
+        if corners is not None:
+            for corner in corners:
+                x, y = corner.ravel()
+                kp = cv2.KeyPoint(x, y, 1)
+                keypoints.append(kp)
+
+        # Extract simple descriptors (patch around each keypoint)
+        descriptors = []
+        patch_size = 9
+
+        for kp in keypoints:
+            x, y = int(kp.pt[0]), int(kp.pt[1])
+
+            # Extract patch
+            patch = self._extract_patch(gray, x, y, patch_size)
+            descriptor = patch.flatten()
+            descriptors.append(descriptor)
+
+        return keypoints, np.array(descriptors) if descriptors else None
+
+    def match_features(self, desc1, desc2, method='bfm', ratio_threshold=0.75):
+        """Match features between two descriptor sets"""
+        if desc1 is None or desc2 is None:
+            return []
+
+        if method == 'bfm':
+            return self._brute_force_matcher(desc1, desc2, ratio_threshold)
+        elif method == 'flann':
+            return self._flann_matcher(desc1, desc2, ratio_threshold)
+
+    def _brute_force_matcher(self, desc1, desc2, ratio_threshold):
+        """Brute force feature matching"""
+        import cv2
+
+        # Create BFMatcher
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+
+        # Match descriptors
+        matches = bf.knnMatch(desc1, desc2, k=2)
+
+        # Apply ratio test
+        good_matches = []
+        for match_pair in matches:
+            if len(match_pair) == 2:
+                m, n = match_pair
+                if m.distance < ratio_threshold * n.distance:
+                    good_matches.append(m)
+
+        return good_matches
+
+class VisualOdometry:
+    def __init__(self, camera_parameters):
+        self.camera = PinholeCamera(
+            camera_parameters['focal_length'],
+            camera_parameters['image_width'],
+            camera_parameters['image_height']
+        )
+        self.feature_extractor = FeatureExtractor()
+        self.prev_image = None
+        self.prev_keypoints = None
+        self.prev_descriptors = None
+        self.pose = np.eye(4)  # Initial pose
+
+    def estimate_motion(self, current_image):
+        """Estimate camera motion from consecutive images"""
+        if self.prev_image is None:
+            # First frame
+            self.prev_image = current_image
+            self.prev_keypoints, self.prev_descriptors = self.feature_extractor.extract_features(current_image)
+            return self.pose
+
+        # Extract features from current frame
+        curr_keypoints, curr_descriptors = self.feature_extractor.extract_features(current_image)
+
+        # Match features
+        matches = self.feature_extractor.match_features(
+            self.prev_descriptors,
+            curr_descriptors
+        )
+
+        if len(matches) < 10:  # Not enough matches
+            return self.pose
+
+        # Extract matched keypoints
+        prev_pts = np.array([self.prev_keypoints[m.queryIdx].pt for m in matches])
+        curr_pts = np.array([curr_keypoints[m.trainIdx].pt for m in matches])
+
+        # Estimate motion using Essential matrix
+        E, mask = cv2.findEssentialMat(prev_pts, curr_pts, self.camera.intrinsic_matrix, method=cv2.RANSAC)
+
+        # Recover relative pose
+        _, R, t, mask = cv2.recoverPose(E, prev_pts, curr_pts, self.camera.intrinsic_matrix)
+
+        # Update pose
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3] = t.flatten()
+
+        self.pose = self.pose @ T
+
+        # Update previous frame
+        self.prev_image = current_image
+        self.prev_keypoints = curr_keypoints
+        self.prev_descriptors = curr_descriptors
+
+        return self.pose
+```
+
+## 14.3 Object Detection and Recognition
+
+### 14.3.1 Deep Learning for Object Detection
+
+Modern object detection uses deep neural networks:
+
+```python
+class YOLODetector:
+    def __init__(self, config_path, weights_path, class_names):
+        self.config_path = config_path
+        self.weights_path = weights_path
+        self.class_names = class_names
+        self.net = None
+        self.load_model()
+
+    def load_model(self):
+        """Load YOLO model"""
+        import cv2
+        import numpy as np
+
+        # Load network
+        self.net = cv2.dnn.readNetFromDarknet(self.config_path, self.weights_path)
+
+        # Use GPU if available
+        if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+            self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+            self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+
+    def detect_objects(self, image, confidence_threshold=0.5, nms_threshold=0.4):
+        """Detect objects in image"""
+        # Get output layer names
+        layer_names = self.net.getLayerNames()
+        output_layers = [layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
+
+        # Prepare image
+        blob = cv2.dnn.blobFromImage(
+            image,
+            1/255.0,
+            (416, 416),
+            swapRB=True,
+            crop=False
+        )
+
+        # Forward pass
+        self.net.setInput(blob)
+        outputs = self.net.forward(output_layers)
+
+        # Process detections
+        boxes = []
+        confidences = []
+        class_ids = []
+
+        for output in outputs:
+            for detection in output:
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+
+                if confidence > confidence_threshold:
+                    # Object detected
+                    center_x = int(detection[0] * image.shape[1])
+                    center_y = int(detection[1] * image.shape[0])
+                    width = int(detection[2] * image.shape[1])
+                    height = int(detection[3] * image.shape[0])
+
+                    # Rectangle coordinates
+                    x = int(center_x - width / 2)
+                    y = int(center_y - height / 2)
+
+                    boxes.append([x, y, width, height])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+
+        # Apply Non-Maximum Suppression
+        indices = cv2.dnn.NMSBoxes(
+            boxes,
+            confidences,
+            confidence_threshold,
+            nms_threshold
+        )
+
+        detections = []
+        if len(indices) > 0:
+            for i in indices.flatten():
+                x, y, w, h = boxes[i]
+                confidence = confidences[i]
+                class_id = class_ids[i]
+                class_name = self.class_names[class_id]
+
+                detection = {
+                    'bbox': [x, y, x + w, y + h],
+                    'confidence': confidence,
+                    'class_id': class_id,
+                    'class_name': class_name
+                }
+                detections.append(detection)
+
+        return detections
+
+class ObjectTracker:
+    def __init__(self, max_disappeared=50, max_distance=50):
+        self.next_object_id = 0
+        self.objects = {}
+        self.disappeared = {}
+        self.max_disappeared = max_disappeared
+        self.max_distance = max_distance
+
+    def register(self, centroid):
+        """Register new object"""
+        self.objects[self.next_object_id] = {
+            'centroid': centroid,
+            'bbox': None,
+            'history': [centroid],
+            'class_name': None
+        }
+        self.disappeared[self.next_object_id] = 0
+        self.next_object_id += 1
+
+    def deregister(self, object_id):
+        """Deregister object"""
+        del self.objects[object_id]
+        del self.disappeared[object_id]
+
+    def update(self, detections):
+        """Update tracking with new detections"""
+        if len(detections) == 0:
+            # Mark all existing objects as disappeared
+            for object_id in list(self.disappeared.keys()):
+                self.disappeared[object_id] += 1
+
+                if self.disappeared[object_id] > self.max_disappeared:
+                    self.deregister(object_id)
+
+            return self.objects
+
+        # Initialize new centroids
+        input_centroids = np.zeros((len(detections), 2), dtype="int")
+        input_bboxes = []
+
+        for (i, detection) in enumerate(detections):
+            x1, y1, x2, y2 = detection['bbox']
+            cX = int((x1 + x2) / 2.0)
+            cY = int((y1 + y2) / 2.0)
+            input_centroids[i] = (cX, cY)
+            input_bboxes.append(detection['bbox'])
+
+        # If no objects currently tracked, register all detections
+        if len(self.objects) == 0:
+            for i in range(len(input_centroids)):
+                self.register(input_centroids[i])
+
+        else:
+            # Get current object centroids
+            object_centroids = list(
+                obj['centroid'] for obj in self.objects.values()
+            )
+
+            # Compute distance between each pair
+            D = dist.cdist(np.array(object_centroids), input_centroids)
+
+            # Find minimum distance for each object
+            rows = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[rows]
+
+            # Keep track of used row and column indices
+            used_row_idxs = set()
+            used_col_idxs = set()
+
+            # Loop over the combination of the (row, column) index tuples
+            for (row, col) in zip(rows, cols):
+                # If we have already examined either the row or column, ignore it
+                if row in used_row_idxs or col in used_col_idxs:
+                    continue
+
+                # If distance is greater than maximum distance, do not associate
+                if D[row, col] > self.max_distance:
+                    continue
+
+                # Get object ID
+                object_id = list(self.objects.keys())[row]
+
+                # Update object centroid and bbox
+                self.objects[object_id]['centroid'] = input_centroids[col]
+                self.objects[object_id]['bbox'] = input_bboxes[col]
+                self.objects[object_id]['history'].append(input_centroids[col])
+
+                # Reset disappeared counter
+                self.disappeared[object_id] = 0
+
+                # Mark as used
+                used_row_idxs.add(row)
+                used_col_idxs.add(col)
+
+            # Compute unused row and column indices
+            unused_row_idxs = set(range(0, D.shape[0])).difference(used_row_idxs)
+            unused_col_idxs = set(range(0, D.shape[1])).difference(used_col_idxs)
+
+            # If objects disappeared > disappeared threshold, deregister them
+            if D.shape[0] >= D.shape[1]:
+                for row in unused_row_idxs:
+                    object_id = list(self.objects.keys())[row]
+                    self.disappeared[object_id] += 1
+
+                    if self.disappeared[object_id] > self.max_disappeared:
+                        self.deregister(object_id)
+
+            # Register new objects as needed
+            for col in unused_col_idxs:
+                self.register(input_centroids[col])
+
+        return self.objects
+```
+
+### 14.3.2 Semantic Segmentation
+
+Pixel-level understanding of the scene:
+
+```python
+class SemanticSegmentationNet:
+    def __init__(self, model_path, num_classes):
+        self.model_path = model_path
+        self.num_classes = num_classes
+        self.model = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.load_model()
+
+    def load_model(self):
+        """Load segmentation model"""
+        import torch
+        import torch.nn as nn
+
+        # Define model architecture (example: DeepLabV3)
+        self.model = models.segmentation.deeplabv3_resnet101(pretrained=False)
+        self.model.classifier[4] = nn.Conv2d(256, self.num_classes, kernel_size=1)
+        self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        self.model.to(self.device)
+        self.model.eval()
+
+    def predict(self, image):
+        """Perform semantic segmentation"""
+        import torch
+        import torchvision.transforms as transforms
+
+        # Preprocess image
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((512, 512)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        input_tensor = transform(image).unsqueeze(0).to(self.device)
+
+        # Predict
+        with torch.no_grad():
+            output = self.model(input_tensor)
+            predictions = output['out'][0]
+
+        # Get segmentation mask
+        segmentation_mask = predictions.argmax(0).cpu().numpy()
+
+        return segmentation_mask
+
+    def visualize_segmentation(self, image, segmentation_mask, class_colors):
+        """Visualize segmentation results"""
+        import cv2
+        import numpy as np
+
+        # Resize mask to original image size
+        mask_resized = cv2.resize(segmentation_mask, (image.shape[1], image.shape[0]), interpolation=cv2.NEAREST)
+
+        # Create colored segmentation
+        colored_mask = np.zeros((image.shape[0], image.shape[1], 3), dtype=np.uint8)
+
+        for class_id, color in class_colors.items():
+            colored_mask[mask_resized == class_id] = color
+
+        # Blend with original image
+        alpha = 0.5
+        result = cv2.addWeighted(image, 1 - alpha, colored_mask, alpha, 0)
+
+        return result
+```
+
+## 14.4 Visual SLAM
+
+### 14.4.1 SLAM Fundamentals
+
+Simultaneous Localization and Mapping (SLAM) estimates camera pose while building a map:
+
+```python
+class VisualSLAM:
+    def __init__(self, camera_parameters):
+        self.camera = PinholeCamera(
+            camera_parameters['focal_length'],
+            camera_parameters['image_width'],
+            camera_parameters['image_height']
+        )
+        self.feature_extractor = FeatureExtractor()
+        self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+
+        # Map data structures
+        self.map_points = []
+        self.keyframes = []
+        self.current_pose = np.eye(4)
+
+        # SLAM parameters
+        self.min_matches = 10
+        self.min_triangulation_angle = 1.0  # degrees
+        self.reprojection_threshold = 3.0  # pixels
+
+    def process_frame(self, image, timestamp):
+        """Process new frame for SLAM"""
+        # Detect features
+        keypoints, descriptors = self.feature_extractor.extract_features(image, 'orb', 1000)
+
+        if not self.keyframes:
+            # First frame - initialize map
+            self._initialize_map(image, keypoints, descriptors, timestamp)
+            return self.current_pose, self.map_points
+
+        # Match with last keyframe
+        last_keyframe = self.keyframes[-1]
+        matches = self._match_features(last_keyframe['descriptors'], descriptors)
+
+        if len(matches) < self.min_matches:
+            # Tracking lost - relocalize
+            return self._relocalize(image, keypoints, descriptors)
+
+        # Estimate pose
+        pose, inliers = self._estimate_pose(
+            last_keyframe['keypoints'],
+            keypoints,
+            matches
+        )
+
+        if pose is None:
+            return self._relocalize(image, keypoints, descriptors)
+
+        self.current_pose = pose
+
+        # Triangulate new map points
+        new_map_points = self._triangulate_points(
+            last_keyframe['keypoints'],
+            keypoints,
+            matches,
+            last_keyframe['pose'],
+            pose,
+            inliers
+        )
+
+        self.map_points.extend(new_map_points)
+
+        # Check if new keyframe is needed
+        if self._should_add_keyframe(image, keypoints, pose):
+            self._add_keyframe(image, keypoints, descriptors, pose, timestamp)
+
+        # Bundle adjustment (simplified)
+        if len(self.keyframes) % 10 == 0:
+            self._local_bundle_adjustment()
+
+        return self.current_pose, self.map_points
+
+    def _initialize_map(self, image, keypoints, descriptors, timestamp):
+        """Initialize map with first frame"""
+        # Create initial keyframe at origin
+        initial_pose = np.eye(4)
+
+        self.keyframes.append({
+            'image': image.copy(),
+            'keypoints': keypoints,
+            'descriptors': descriptors,
+            'pose': initial_pose,
+            'timestamp': timestamp
+        })
+
+        self.current_pose = initial_pose
+
+    def _match_features(self, desc1, desc2, ratio_threshold=0.75):
+        """Match features between two sets of descriptors"""
+        matches = self.matcher.knnMatch(desc1, desc2, k=2)
+
+        good_matches = []
+        for match_pair in matches:
+            if len(match_pair) == 2:
+                m, n = match_pair
+                if m.distance < ratio_threshold * n.distance:
+                    good_matches.append(m)
+
+        return good_matches
+
+    def _estimate_pose(self, kp1, kp2, matches):
+        """Estimate camera pose using PnP"""
+        if len(matches) < 4:
+            return None, None
+
+        # Extract matched keypoints
+        obj_points = []
+        img_points = []
+
+        for match in matches:
+            # Get corresponding 3D point if available
+            pt3d = self._get_3d_point_for_match(match)
+            if pt3d is not None:
+                obj_points.append(pt3d)
+                img_points.append(kp2[match.trainIdx].pt)
+
+        if len(obj_points) < 4:
+            return None, None
+
+        # Convert to numpy arrays
+        obj_points = np.array(obj_points, dtype=np.float32)
+        img_points = np.array(img_points, dtype=np.float32)
+
+        # Solve PnP
+        success, rvec, tvec, inliers = cv2.solvePnPRansac(
+            obj_points,
+            img_points,
+            self.camera.intrinsic_matrix,
+            None,
+            iterationsCount=1000,
+            reprojectionError=self.reprojection_threshold,
+            confidence=0.99
+        )
+
+        if success:
+            # Convert rotation vector to matrix
+            R, _ = cv2.Rodrigues(rvec)
+
+            # Create pose matrix
+            pose = np.eye(4)
+            pose[:3, :3] = R
+            pose[:3, 3] = tvec.flatten()
+
+            return pose, inliers
+
+        return None, None
+
+    def _triangulate_points(self, kp1, kp2, matches, pose1, pose2, inliers):
+        """Triangulate 3D points from matched keypoints"""
+        if inliers is not None:
+            matches = [matches[i] for i in inliers.flatten()]
+
+        new_points = []
+
+        for match in matches:
+            # Get corresponding keypoints
+            pt1 = np.array(kp1[match.queryIdx].pt)
+            pt2 = np.array(kp2[match.trainIdx].pt)
+
+            # Triangulate
+            point_3d = self._triangulate_point(pt1, pt2, pose1, pose2)
+
+            if point_3d is not None:
+                new_points.append({
+                    'position': point_3d,
+                    'observations': [
+                        {
+                            'keyframe_id': len(self.keyframes) - 1,
+                            'keypoint_idx': match.queryIdx,
+                            'pixel_coord': pt1
+                        },
+                        {
+                            'keyframe_id': len(self.keyframes),  # Current frame
+                            'keypoint_idx': match.trainIdx,
+                            'pixel_coord': pt2
+                        }
+                    ]
+                })
+
+        return new_points
+
+    def _triangulate_point(self, pt1, pt2, pose1, pose2):
+        """Triangulate a single 3D point"""
+        # Camera matrices
+        P1 = self.camera.intrinsic_matrix @ pose1[:3, :]
+        P2 = self.camera.intrinsic_matrix @ pose2[:3, :]
+
+        # DLT triangulation
+        A = np.zeros((4, 4))
+
+        for i in range(2):
+            A[i, :] = pt1[i] * P1[2, :] - P1[i, :]
+            A[i + 2, :] = pt2[i] * P2[2, :] - P2[i, :]
+
+        # Solve using SVD
+        _, _, Vt = np.linalg.svd(A)
+        X = Vt[-1, :]
+
+        # Convert from homogeneous to 3D
+        if X[3] != 0:
+            X = X[:3] / X[3]
+
+            # Check triangulation angle
+            ray1 = pose1[:3, 3] - X
+            ray2 = pose2[:3, 3] - X
+
+            cos_angle = np.dot(ray1, ray2) / (np.linalg.norm(ray1) * np.linalg.norm(ray2))
+            angle = np.arccos(np.clip(cos_angle, -1, 1))
+
+            if angle > np.radians(self.min_triangulation_angle):
+                # Check reprojection error
+                error1 = self._calculate_reprojection_error(X, pt1, P1)
+                error2 = self._calculate_reprojection_error(X, pt2, P2)
+
+                if error1 < self.reprojection_threshold and error2 < self.reprojection_threshold:
+                    return X
+
+        return None
+
+    def _calculate_reprojection_error(self, point_3d, point_2d, P):
+        """Calculate reprojection error"""
+        # Project 3D point to image
+        projected = P @ np.append(point_3d, 1)
+        projected = projected[:2] / projected[2]
+
+        # Calculate error
+        error = np.linalg.norm(projected - point_2d)
+        return error
+
+    def _local_bundle_adjustment(self):
+        """Perform local bundle adjustment"""
+        # This is a simplified version
+        # In practice, use g2o or Ceres Solver for full BA
+
+        recent_keyframes = self.keyframes[-10:]  # Last 10 keyframes
+
+        print(f"Performing local bundle adjustment on {len(recent_keyframes)} keyframes")
+
+        # Update poses using recent observations
+        for keyframe in recent_keyframes:
+            # Simple pose refinement based on 3D-2D correspondences
+            refined_pose = self._refine_pose(keyframe)
+            keyframe['pose'] = refined_pose
+
+    def _refine_pose(self, keyframe):
+        """Refine keyframe pose"""
+        # Get 3D-2D correspondences
+        obj_points = []
+        img_points = []
+
+        for map_point in self.map_points:
+            for obs in map_point['observations']:
+                if obs['keyframe_id'] == keyframe['timestamp']:
+                    obj_points.append(map_point['position'])
+                    img_points.append(obs['pixel_coord'])
+
+        if len(obj_points) >= 6:
+            obj_points = np.array(obj_points, dtype=np.float32)
+            img_points = np.array(img_points, dtype=np.float32)
+
+            # Refine pose
+            success, rvec, tvec = cv2.solvePnP(
+                obj_points,
+                img_points,
+                self.camera.intrinsic_matrix,
+                None,
+                flags=cv2.SOLVEPNP_ITERATIVE
+            )
+
+            if success:
+                R, _ = cv2.Rodrigues(rvec)
+                pose = np.eye(4)
+                pose[:3, :3] = R
+                pose[:3, 3] = tvec.flatten()
+
+                return pose
+
+        return keyframe['pose']
+```
+
+## Chapter Summary
+
+This chapter covered comprehensive computer vision techniques for robotic applications:
+
+### Key Concepts Covered
+1. **Image Formation**: Pinhole camera model and lens distortion correction
+2. **Image Processing**: Preprocessing, edge detection, and feature extraction
+3. **Object Detection**: YOLO-based detection with tracking capabilities
+4. **Semantic Segmentation**: Pixel-level scene understanding
+5. **Visual SLAM**: Simultaneous localization and mapping
+6. **Feature Matching**: Robust feature detection and matching algorithms
+
+### Practical Implementations
+- Complete camera model with distortion correction
+- ORB feature extractor with descriptor matching
+- Visual odometry using essential matrix decomposition
+- YOLO object detector with multi-object tracking
+- Semantic segmentation with DeepLabV3
+- Complete Visual SLAM pipeline with bundle adjustment
+
+### Next Steps
+With computer vision mastery, you're ready for:
+- Chapter 14: Sensor Fusion and State Estimation
+- Chapter 15: SLAM, VSLAM, and Navigation
+- Chapter 16: Path Planning Algorithms
+
+---
+
+## Glossary Terms
+
+**Term**: **Pinhole Camera Model**
+**Definition**: Mathematical model describing how 3D points in the world are projected onto a 2D image plane through a single point (the pinhole)
+**Related**: **Camera Calibration**, **Extrinsic Parameters**
+
+**Term**: **Essential Matrix**
+**Definition**: 3x3 matrix that relates corresponding points in two images taken by cameras with known intrinsic parameters
+**Related**: **Fundamental Matrix**, **Five-Point Algorithm**
+
+**Term**: **Non-Maximum Suppression**
+**Definition**: Algorithm used in edge detection to thin edges by keeping only local maxima in gradient magnitude
+**Related**: **Edge Detection**, **Canny Operator**
+
+**Term**: **Visual Odometry**
+**Definition**: Process of estimating camera pose motion by analyzing sequential images and tracking feature movements
+**Related**: **SLAM**, **Structure from Motion**
+
+**Term**: **Bundle Adjustment**
+**Definition**: Optimization technique that simultaneously refines 3D structure and camera poses to minimize reprojection error
+**Related**: **SLAM**, **Photogrammetry**
+
+---

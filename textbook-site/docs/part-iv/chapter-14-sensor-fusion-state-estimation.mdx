@@ -1,0 +1,40 @@
+---
+title: "Chapter 12 : Sensor Fusion and State Estimation"
+sidebar_position: 2
+difficulty: "advanced"
+prerequisites: ["chapter-13-computer-vision-robots", "chapter-3-sensors-actuators-physical-limits"]
+estimatedTime: 55
+objectives:
+  - "Master sensor fusion techniques for robotics"
+  - "Implement Kalman filters and variants"
+  - "Apply particle filters for non-linear estimation"
+  - "Develop robust state estimation systems"
+---
+
+# Chapter 12 : Sensor Fusion and State Estimation
+
+## Introduction
+
+Sensor fusion combines data from multiple sensors to produce more accurate, reliable, and comprehensive information than any single sensor could provide. In robotics, sensor fusion is essential for robust perception and control.
+
+:::info
+Sensor fusion addresses fundamental challenges in robotics: sensor noise, incomplete coverage, different update rates, and complementary sensor modalities. By intelligently combining measurements, robots can achieve environmental awareness that exceeds the capabilities of individual sensors.
+:::
+
+## 12.1 State Estimation Fundamentals
+
+### 12.1.1 Bayesian Filtering Framework
+
+Bayesian filtering provides the theoretical foundation for state estimation.
+
+**Bayes Filter Equation:**
+
+```text
+p(xt | z1...t) = eta * p(zt | xt) * Integral [ p(xt | xt-1) * p(xt-1 | z1...t-1) ]
+
+Where:
+xt = State at time t
+zt = Measurement at time t
+eta = Normalization constant
+p(xt | xt-1) = Motion model (prediction)
+p(zt | xt) = Measurement model (correction)

@@ -1,0 +1,40 @@
+---
+title: "Chapter 08 : Gazebo Physics Simulations"
+sidebar_position: 4
+difficulty: "intermediate"
+prerequisites: ["chapter-7-gazebo-physics-simulation", "chapter-3-sensors-actuators-physical-limits"]
+estimatedTime: 50
+objectives:
+  - "Understand physics engine architectures for robotics"
+  - "Master collision detection and response algorithms"
+  - "Implement realistic sensor and actuator physics"
+  - "Apply physics optimization techniques for real-time simulation"
+---
+
+# Chapter 07 : Physics Simulations for Robotics
+
+## Introduction
+
+Physics simulation forms the backbone of modern robotics testing and development, enabling virtual prototypes to behave according to real-world physical laws. In robotics, physics engines provide the computational framework for simulating object interactions, dynamics, and environmental constraints that govern robot behavior.
+
+:::info
+Physics simulation in robotics differs from game physics in its emphasis on accuracy and predictability. While games prioritize visual appeal and performance, robotics simulations require precise physical modeling for reliable algorithm development and testing.
+:::
+
+## 8.1 Physics Engine Fundamentals
+
+### 8.1.1 Core Physics Components
+
+A comprehensive physics simulation system consists of several interconnected components:
+
+#### Rigid Body Dynamics
+Rigid body dynamics govern the motion of solid objects that do not deform under stress. The fundamental equations of motion for rigid bodies are:
+
+```text
+M * dv/dt = F_ext + F_contact
+
+Where:
+M = Mass matrix (including inertia tensor)
+v = Velocity vector (linear and angular)
+F_ext = External forces (gravity, user-applied forces)
+F_contact = Contact and constraint forces

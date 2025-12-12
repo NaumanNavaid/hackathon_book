@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(.specify/scripts/powershell/create-new-feature.ps1:*)",
+      "Bash(git checkout:*)",
+      "Bash(.specify/scripts/bash/create-phr.sh:*)",
+      "Bash(npx create-docusaurus@latest:*)",
+      "SlashCommand(/sp.phr --title \"User explains MDX template literal fix\" --stage general --feature none)",
+      "Bash(findstr /N /C:\"{x}\" textbook-sitedocspart-iefficient-intelligence.mdx)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

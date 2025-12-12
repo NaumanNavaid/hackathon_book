@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@cmfcmf/docusaurus-search-local": "^2.0.1"
+  }
+}

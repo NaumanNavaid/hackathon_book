@@ -1,0 +1,56 @@
+---
+title: "Chapter 04 : Nodes, Topics, Services, Actions"
+sidebar_position: 3
+difficulty: "intermediate"
+estimatedTime: 55
+objectives:
+  - "Master advanced ROS 2 communication patterns"
+  - "Design robust node architectures and lifecycles"
+  - "Implement effective topic, service, and action patterns"
+  - "Understand best practices for real-world ROS 2 applications"
+---
+
+# Chapter 04 : Nodes, Topics, Services, Actions
+
+## Introduction
+
+This chapter delves deeper into the advanced communication patterns that enable complex robotic systems. We'll explore sophisticated node architectures, efficient topic design patterns, robust service implementations, and complex action workflows. Understanding these patterns is essential for building scalable, maintainable, and performant robotic applications.
+
+:::info
+The choice between topics, services, and actions fundamentally impacts your system's performance, reliability, and maintainability. Mastering these communication patterns is key to becoming a proficient ROS 2 developer.
+:::
+
+## 4.1 Advanced Node Architectures
+
+### 4.1.1 Node Composition and Lifecycle
+
+Modern ROS 2 applications often use node composition to reduce computational overhead and improve communication efficiency:
+
+**Diagram: Node Composition vs Multiple Nodes**
+
+```text
+Traditional Multi-Node Architecture:
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│    Sensor   │   │ Processor   │   │Controller   │
+│     Node    │   │     Node    │   │     Node    │
+│             │   │             │   │             │
+│ ┌─────────┐ │   │ ┌─────────┐ │   │ ┌─────────┐ │
+│ │Publisher│──┼─→│Subscriber│──┼─→│Subscriber│ │
+│ └─────────┘ │   │ └─────────┘ │   │ └─────────┘ │
+└─────────────┘   └─────────────┘   └─────────────┘
+     ↕                ↕                ↕
+Network transport with serialization overhead
+
+Composed Node Architecture:
+┌─────────────────────────────────────────────────────────┐
+│                   Composed Node                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
+│  │    Sensor   │  │ Processor   │  │Controller   │      │
+│  │Component    │  │Component    │  │Component    │      │
+│  └─────────────┘  └─────────────┘  └─────────────┘      │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Shared Memory Buffer               │    │
+│  │            Zero-Copy Communication              │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘

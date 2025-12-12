@@ -1,0 +1,46 @@
+---
+title: "Chapter 03 : ROS 2 Fundamentals"
+sidebar_position: 1
+difficulty: "beginner"
+estimatedTime: 60
+prerequisites: ["chapter-3-sensors-actuators"]
+objectives:
+  - "Understand ROS 2 architecture and key concepts"
+  - "Learn DDS-based communication fundamentals"
+  - "Master Quality of Service (QoS) policies"
+  - "Create basic ROS 2 nodes, workspaces, and custom interfaces"
+---
+
+# Chapter 03: ROS 2 Fundamentals
+
+## Introduction
+
+Robot Operating System 2 (ROS 2) represents a fundamental evolution in robotics middleware, addressing the limitations of ROS 1 while maintaining its core philosophy of code reuse in robotics. ROS 2 is built from the ground up for real-world applications, featuring real-time capabilities, security, and support for multi-robot systems. This chapter introduces the fundamental concepts and architecture of ROS 2, providing the foundation for building complex robotic systems.
+
+:::info
+ROS 2 is not an operating system but a middleware framework that provides services like hardware abstraction, device drivers, libraries, visualizers, message-passing, package management, and more.
+:::
+
+## 3.1 ROS 2 Architecture Overview
+
+### 3.1.1 Evolution from ROS 1 to ROS 2
+
+ROS 2 addresses critical limitations in ROS 1 while introducing significant architectural improvements:
+
+
+
+**Diagram: ROS 1 vs ROS 2 Architecture**
+
+```text
+ROS 1 Architecture                     ROS 2 Architecture
+┌─────────────────────────┐         ┌─────────────────────────┐
+│ ROS Master              │         │ DDS (Data Distribution) │
+│ (Centralized)           │         │ (Decentralized)         │
+│    ↕    ↕    ↕          │         │    ↕    ↕    ↕          │
+┌───────┬───────┬───────┐   →     ┌───────┬───────┬───────┐
+│ Node A│ Node B│ Node C│         │ Node A│ Node B│ Node C│
+└───────┴───────┴───────┘         └───────┴───────┴───────┘
+                                │    ↕    ↕    ↕          │
+                                └─────────────────────────┘
+                                   Discovery, Communication
+                                   Security, Real-time

@@ -1,0 +1,39 @@
+---
+title: "Chapter 13 : SLAM, VSLAM, and Navigation"
+sidebar_position: 3
+difficulty: "advanced"
+prerequisites: ["chapter-14-sensor-fusion-state-estimation", "chapter-13-computer-vision-robots"]
+estimatedTime: 90
+objectives:
+  - "Master SLAM algorithms and architectures"
+  - "Implement visual SLAM with loop closure detection"
+  - "Develop robust navigation systems"
+  - "Apply SLAM to real-world robotic applications"
+---
+
+# Chapter 13 : SLAM, VSLAM, and Navigation
+
+## Introduction
+
+Simultaneous Localization and Mapping (SLAM) is one of the fundamental challenges in robotics. The robot must build a map of an unknown environment while simultaneously estimating its position within that map.
+
+:::info
+SLAM addresses the chicken-and-egg problem: to build a map, you need to know your position; to know your position, you need a map. The solution lies in the probabilistic framework that estimates both pose and map simultaneously while maintaining uncertainty estimates.
+:::
+
+## 13.1 SLAM Fundamentals
+
+### 13.1.1 The SLAM Problem
+
+SLAM can be formulated as a Bayesian estimation problem.
+
+**SLAM Equation:**
+
+```text
+p(x_1:t, m | z_1:t, u_1:t) = eta * p(z_t | x_t, m) * Integral [ p(x_t | x_t-1, u_t) * p(x_1:t-1, m | z_1:t-1, u_1:t-1) ]
+
+Where:
+x_1:t = Robot poses over time
+m     = Map (landmarks or occupancy grid)
+z_1:t = Measurements over time
+u_1:t = Controls over time

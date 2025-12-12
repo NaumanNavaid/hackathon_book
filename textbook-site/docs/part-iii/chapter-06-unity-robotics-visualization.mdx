@@ -1,0 +1,42 @@
+---
+title: "Chapter 06 : Unity for Robotics Visualization"
+sidebar_position: 1
+difficulty: "intermediate"
+estimatedTime: 90
+prerequisites: ["chapter-7-gazebo-physics-simulation"]
+objectives:
+  - "Understand Unity as a robotics visualization platform"
+  - "Master the Unity-ROS data bridge (ROS-TCP-Connector)"
+  - "Implement photorealistic sensor simulation (Lidar, Cameras)"
+  - "Develop interactive control interfaces and XR applications"
+  - "Generate labeled synthetic data for AI training"
+---
+
+# Chapter 06 : Unity for Robotics Visualization
+
+## Introduction
+
+Unity has evolved from a game engine into a premier platform for robotics simulation and visualization ("Sim2Real"). Unlike traditional simulators like Gazebo, which prioritize physics accuracy over visuals, Unity offers **photorealistic rendering**, **advanced physics (NVIDIA PhysX)**, and **cross-platform deployment** (VR, AR, Mobile). This chapter explores how to build "Digital Twins" that look and act like their real-world counterparts.
+
+:::info
+**Why Unity?** While Gazebo is excellent for testing algorithms, Unity is superior for **Computer Vision** training (due to HDRP rendering) and **Human-Robot Interaction** (due to XR support).
+:::
+
+## 6.1 Unity for Robotics Overview
+
+### 6.1.1 The Ecosystem Architecture
+
+Unity's robotics ecosystem relies on a modular architecture:
+
+**Diagram: Unity Robotics Architecture**
+
+```text
+Unity Editor
+├── Packages
+│   ├── URDF Importer (Model Loading)
+│   ├── ROS-TCP-Connector (Communication)
+│   └── Perception SDK (Synthetic Data)
+├── Physics Engine (PhysX 4.1/5.0)
+│   └── ArticulationBody System (Robot Joints)
+└── Rendering (HDRP/URP)
+    └── Ray Tracing & Physical Cameras

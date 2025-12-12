@@ -1,0 +1,33 @@
+---
+title: "Chapter 02 : Sensors, Actuators, and Physical Limits"
+sidebar_position: 2
+difficulty: "intermediate"
+estimatedTime: 50
+prerequisites: ["chapter-1-embodied-intelligence"]
+---
+
+# Chapter 02 : Sensors, Actuators, and Physical Limits
+
+## Introduction
+
+The physical capabilities of AI systems are fundamentally constrained by the laws of physics. Understanding these limitations is crucial for designing effective embodied AI systems that can operate reliably in the real world. This chapter explores the physical principles governing sensors and actuators, analyzes the constraints they impose on intelligent systems, and presents strategies for working within and around these limitations.
+
+:::info
+Physical constraints are not limitations to be eliminated, but design parameters that shape the possibilities and characteristics of intelligent systems. Working with physics rather than against it leads to more robust and efficient designs.
+:::
+
+## 2.1 Sensing in the Physical World
+
+### 2.1.1 Fundamentals of Sensing
+
+Sensing is the process by which physical systems gather information about their environment and internal state. All sensing ultimately involves energy exchange between the system and its environment.
+
+**Diagram: Sensing Process Pipeline**
+
+```text
+[Physical Phenomenon] → [Transducer] → [Signal Processing] → [Feature Extraction] → [Perception]
+        ↓                    ↓              ↓                  ↓              ↓
+     Light, Sound        Energy          Amplification     Pattern        Understanding
+     Force, Heat          Conversion      Filtering         Recognition    Decision
+     Chemical, EM         Measurement     Digitization      Estimation     Action
+     Magnetic            Detection       Calibration       Tracking       Planning

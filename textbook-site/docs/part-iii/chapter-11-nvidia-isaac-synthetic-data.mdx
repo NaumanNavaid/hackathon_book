@@ -1,0 +1,987 @@
+---
+title: "Chapter 11 : NVIDIA Isaac Sim & Synthetic Data"
+part: 3
+chapter: 11
+difficulty: "advanced"
+estimatedTime: 65
+prerequisites: ["chapter-7-gazebo-physics-simulation", "chapter-8-unity-robotics-visualization"]
+objectives:
+  - "Master NVIDIA Isaac Sim for advanced robotics simulation"
+  - "Generate synthetic data for AI training"
+  - "Understand photorealistic simulation environments"
+  - "Create domain randomization and variation techniques"
+---
+
+# Chapter 11 : NVIDIA Isaac Sim & Synthetic Data
+
+## Introduction
+
+NVIDIA Isaac Sim represents the cutting edge of robotics simulation platforms, combining photorealistic rendering, advanced physics simulation, and AI-driven synthetic data generation. Built on NVIDIA's Omniverse platform, Isaac Sim provides a comprehensive environment for developing, testing, and training autonomous robots. This chapter explores Isaac Sim's capabilities, synthetic data generation techniques, and integration with modern AI training pipelines.
+
+:::info
+Isaac Sim bridges the gap between simulation and reality by creating photorealistic environments that can generate unlimited training data for AI models, dramatically accelerating robotic learning and development.
+:::
+
+## 11.1 Isaac Sim Architecture
+
+### 11.1.1 Omniverse Platform Foundation
+
+Isaac Sim is built on NVIDIA's Omniverse, a collaborative 3D simulation platform:
+
+**Diagram: Isaac Sim Architecture**
+
+```
+Omniverse Platform
+├── Nucleus (Core Services)
+│   ├── Scene Management
+│   ├── Asset Loading
+│   ├── Collaboration
+│   └── Version Control
+├── USD (Universal Scene Description)
+│   ├── Scene Graph
+│   ├── Material System
+│   ├── Animation System
+│   └── Physics Integration
+├── Simulation Engines
+│   ├── NVIDIA PhysX 5
+│   ├── Ray Tracing
+│   ├── Fluid Dynamics
+│   └── Cloth Simulation
+├── Isaac Sim SDK
+│   ├── Python API
+│   ├── C++ API
+│   ├── ROS 2 Integration
+│   └── Extension System
+└── AI Integration
+    ├── Synthesis Network
+    ├── Domain Randomization
+    ├── Data Generation
+    └── Cloud Services
+```
+
+### 11.1.2 Key Components
+
+**Simulation Core**
+- **PhysX 5**: Advanced physics simulation with real-time performance
+- **Ray Tracing**: Realistic lighting, shadows, and reflections
+- **Material System**: Physically accurate material rendering
+- **Animation**: Complex character and object animation
+
+**AI Integration**
+- **Synthetia**: NVIDIA's synthetic data generation system
+- **Domain Randomization**: Automatic scene and parameter variation
+- **Ground Truth Generation**: Automated labeling and annotation
+- **Cloud Services**: Scalable cloud-based simulation
+
+**Example: Isaac Sim Python API Setup**
+
+```pythonimport numpy as np
+import matplotlib.pyplot as plt
+from isaacsim import SimulationApp
+from omni.isaac.core import World, WorldSettings
+from omni.isaac.core.robots import Robot
+from omni.isaac.core.utils.nucleus import get_current_stage
+
+class IsaacSimEnvironment:
+    def __init__(self):
+        # Initialize Isaac Sim application
+        self.sim_app = SimulationApp({
+            "headless": False,
+            "width": 1920,
+            "height": 1080
+        })
+
+        # Create world with specific settings
+        world_settings = WorldSettings(
+            physics_dt=1/120.0,
+            stage_units_in_meters=1.0,
+            rendering_dt=1/60.0
+        )
+
+        self.world = World(world_settings)
+        self.scene = get_current_stage()
+
+        # Initialize components
+        self.robots = []
+        self.sensors = []
+        self.cameras = []
+
+    def setup_scene(self):
+        """Setup the simulation scene"""
+        # Clear existing scene
+        self.scene.Clear()
+
+        # Add lighting
+        self.setup_lighting()
+
+        # Add ground plane
+        self.add_ground_plane()
+
+        # Add environment elements
+        self.add_environment()
+
+    def setup_lighting(self):
+        """Configure lighting for photorealistic rendering"""
+        # Add dome light for global illumination
+        from omni.isaac.core import Lighting
+
+        dome_light = self.scene.GetLighting()
+        dome_light.SetDomeLightIntensity(1.0)
+        dome_light.SetTint(1.0, 1.0, 1.0)
+
+        # Add directional lights
+        self.add_directional_lights()
+
+    def add_directional_lights(self):
+        """Add directional lights for realistic lighting"""
+        from omni.isaac.core import Light
+
+        # Main sun light
+        sun_light = Light(
+            prim_path="/World/light_sun",
+            light_type="distant",
+            intensity=2000.0,
+            color=(1.0, 0.95, 0.8)
+        )
+        sun_light.SetCameraPose(0.57735, -0.57735, 0.57735, 0, 0, 0, 1)
+
+        # Ambient fill lights
+        fill_light = Light(
+            prim_path="/World/light_fill",
+            light_type="distant",
+            intensity=500.0,
+            color=(0.8, 0.9, 1.0)
+        )
+        fill_light.SetCameraPose(-0.57735, 0.57735, -0.57735, 0, 0, 0, 1)
+
+    def add_ground_plane(self):
+        """Add photorealistic ground plane"""
+        from omni.isaac.core.utils.nucleus import add_ground_plane
+
+        # Add ground plane with high-quality material
+        add_ground_plane(
+            prim_path="/World/ground_plane",
+            size=100.0,
+            material="concrete_material"
+        )
+
+    def add_environment(self):
+        """Add environment elements"""
+        self.add_buildings()
+        self.add_vegetation()
+        self.add_obstacles()
+
+    def add_buildings(self):
+        """Add realistic building models"""
+        # Load building USD files
+        building_paths = [
+            "/path/to/office_building.usd",
+            "/path/to/warehouse.usd",
+            "/path/to/apartment_complex.usd"
+        ]
+
+        for i, building_path in enumerate(building_paths):
+            building = self.scene.ImportUSD(
+                building_path,
+                f"/World/building_{i}"
+            )
+            self.apply_photorealistic_materials(building)
+
+    def apply_photorealistic_materials(self, prim):
+        """Apply high-quality materials to primitives"""
+        from omni.isaac.core.materials import Material
+
+        # Create PBR material
+        material = Material(
+            prim_path="/Looks/photorealistic_material",
+            material_type="mdl"
+        )
+
+        # Set material properties
+        material.SetBaseColorRoughness(
+            base_color=(0.7, 0.7, 0.7, 1.0),
+            roughness=0.3,
+            metallic=0.1
+        )
+
+        # Apply to primitive
+        material.ApplyToPrim(prim)
+
+    def run_simulation(self):
+        """Run the simulation loop"""
+        self.sim_app.update()
+        return self.world
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.world.clear()
+        self.sim_app.close()
+
+# Example usage
+def main():
+    env = IsaacSimEnvironment()
+
+    try:
+        env.setup_scene()
+
+        # Main simulation loop
+        while True:
+            world = env.run_simulation()
+
+            # Process simulation data
+            pass
+
+    except KeyboardInterrupt:
+        print("Simulation stopped by user")
+    finally:
+        env.cleanup()
+
+if __name__ == "__main__":
+    main()
+```
+
+## 11.2 Synthetic Data Generation
+
+### 11.2.1 Domain Randomization
+
+Domain randomization is crucial for robust AI training:
+
+**Example: Domain Randomization System**
+
+```pythonimport random
+import numpy as np
+from isaacsim import SimulationApp
+from omni.isaac.core import World
+from omni.isaac.core.utils.nucleus import get_current_stage
+
+class DomainRandomization:
+    def __init__(self, scene):
+        self.scene = scene
+        self.randomization_params = {
+            'lighting': {
+                'sun_intensity_range': (800, 3000),
+                'sun_color_variation': 0.2,
+                'ambient_intensity_range': (100, 500)
+            },
+            'weather': {
+                'cloud_density_range': (0.0, 0.8),
+                'fog_density_range': (0.0, 0.3),
+                'rain_intensity_range': (0.0, 1.0)
+            },
+            'materials': {
+                'roughness_range': (0.1, 0.9),
+                'metallic_range': (0.0, 0.8),
+                'base_color_variation': 0.3
+            },
+            'geometry': {
+                'scale_range': (0.8, 1.2),
+                'rotation_range': (-30, 30),
+                'position_jitter': 0.5
+            }
+        }
+
+    def randomize_all(self):
+        """Apply complete domain randomization"""
+        self.randomize_lighting()
+        self.randomize_weather()
+        self.randomize_materials()
+        self.randomize_geometry()
+
+        print(f"Domain randomization applied: {self.get_randomization_summary()}")
+
+    def randomize_lighting(self):
+        """Randomize lighting conditions"""
+        from omni.isaac.core import Light
+
+        # Randomize sun intensity
+        sun_light = self.scene.GetLighting().GetDistantLights()[0]
+        sun_intensity = random.uniform(*self.randomization_params['lighting']['sun_intensity_range'])
+        sun_light.SetIntensity(sun_intensity)
+
+        # Randomize sun color
+        color_variation = self.randomization_params['lighting']['sun_color_variation']
+        sun_color = (
+            1.0 + random.uniform(-color_variation, color_variation),
+            0.95 + random.uniform(-color_variation, color_variation),
+            0.8 + random.uniform(-color_variation, color_variation)
+        )
+        sun_light.SetColor(sun_color)
+
+        # Randomize ambient lighting
+        ambient_intensity = random.uniform(*self.randomization_params['lighting']['ambient_intensity_range'])
+        self.scene.GetLighting().SetAmbientLightIntensity(ambient_intensity)
+
+    def randomize_weather(self):
+        """Randomize weather conditions"""
+        from omni.isaac.core import Weather
+
+        weather = Weather()
+
+        # Randomize cloud density
+        cloud_density = random.uniform(*self.randomization_params['weather']['cloud_density_range'])
+        weather.SetCloudDensity(cloud_density)
+
+        # Randomize fog
+        fog_density = random.uniform(*self.randomization_params['weather']['fog_density_range'])
+        weather.SetFogDensity(fog_density)
+
+        # Randomize rain (if available)
+        rain_intensity = random.uniform(*self.randomization_params['weather']['rain_intensity_range'])
+        weather.SetRainIntensity(rain_intensity)
+
+        weather.Apply()
+
+    def randomize_materials(self):
+        """Randomize material properties"""
+        from omni.isaac.core.materials import Material
+
+        # Get all materials in scene
+        materials = self.scene.GetMaterials()
+
+        for material in materials:
+            if material.GetPrim().GetName() == "DefaultMaterial":
+                continue  # Skip default material
+
+            # Randomize roughness
+            roughness = random.uniform(*self.randomization_params['materials']['roughness_range'])
+            material.SetRoughness(roughness)
+
+            # Randomize metallic property
+            metallic = random.uniform(*self.randomization_params['materials']['metallic_range'])
+            material.SetMetallic(metallic)
+
+            # Randomize base color
+            color_variation = self.randomization_params['materials']['base_color_variation']
+            current_color = material.GetBaseColor()
+            new_color = tuple(
+                max(0, min(1, c + random.uniform(-color_variation, color_variation)))
+                for c in current_color
+            )
+            material.SetBaseColor(new_color)
+
+    def randomize_geometry(self):
+        """Randomize object geometry"""
+        from omni.isaac.core.utils.nucleus import get_prims
+
+        prims = get_prims()
+
+        for prim in prims:
+            # Randomize scale
+            scale_range = self.randomization_params['geometry']['scale_range']
+            scale = random.uniform(*scale_range)
+            prim.SetScale((scale, scale, scale))
+
+            # Randomize rotation
+            rotation_range = self.randomization_params['geometry']['rotation_range']
+            rotation = random.uniform(-rotation_range, rotation_range) * np.pi / 180
+            prim.SetOrientation(rotation)
+
+            # Randomize position slightly
+            jitter = self.randomization_params['geometry']['position_jitter']
+            current_pos = prim.GetPosition()
+            jittered_pos = tuple(
+                pos + random.uniform(-jitter, jitter)
+                for pos in current_pos
+            )
+            prim.SetPosition(jittered_pos)
+
+    def get_randomization_summary(self):
+        """Get summary of applied randomization"""
+        summary = {
+            'lighting': f"Sun intensity randomized between {self.randomization_params['lighting']['sun_intensity_range']}",
+            'weather': f"Weather conditions varied including clouds, fog, and rain",
+            'materials': f"Material properties varied within specified ranges",
+            'geometry': f"Object geometry randomized with scale and rotation"
+        }
+        return summary
+
+# Advanced domain randomization for specific training scenarios
+class AdvancedDomainRandomization(DomainRandomization):
+    def __init__(self, scene):
+        super().__init__(scene)
+        self.training_scenarios = ['outdoor_navigation', 'indoor_manipulation', 'mixed_environment']
+        self.current_scenario = None
+
+    def setup_scenario_randomization(self, scenario_type):
+        """Setup domain randomization for specific training scenario"""
+        self.current_scenario = scenario_type
+
+        if scenario_type == 'outdoor_navigation':
+            self.setup_outdoor_navigation_randomization()
+        elif scenario_type == 'indoor_manipulation':
+            self.setup_indoor_manipulation_randomization()
+        elif scenario_type == 'mixed_environment':
+            self.setup_mixed_environment_randomization()
+
+    def setup_outdoor_navigation_randomization(self):
+        """Randomization optimized for outdoor navigation training"""
+        # Enhanced weather effects
+        self.randomization_params['weather']['rain_intensity_range'] = (0.0, 0.5)
+        self.randomization_params['weather']['fog_density_range'] = (0.0, 0.2)
+        self.randomization_params['weather']['cloud_density_range'] = (0.0, 0.6)
+
+        # Ground material variation
+        self.randomization_params['materials']['roughness_range'] = (0.4, 0.9)
+
+        # Time of day simulation (lighting angle)
+        self.randomize_sun_angle()
+
+    def setup_indoor_manipulation_randomization(self):
+        """Randomization optimized for indoor manipulation training"""
+        # Indoor lighting conditions
+        self.randomization_params['lighting']['sun_intensity_range'] = (500, 1500)
+        self.randomization_params['lighting']['ambient_intensity_range'] = (200, 600)
+
+        # Object material variation
+        self.randomization_params['materials']['roughness_range'] = (0.2, 0.7)
+        self.randomization_params['materials']['metallic_range'] = (0.1, 0.6)
+
+        # Minimal weather effects for indoor
+        self.randomization_params['weather']['fog_density_range'] = (0.0, 0.05)
+        self.randomization_params['weather']['rain_intensity_range'] = (0.0, 0.1)
+
+    def setup_mixed_environment_randomization(self):
+        """Randomization for mixed indoor/outdoor scenarios"""
+        # Wide range of conditions
+        self.randomization_params['lighting']['sun_intensity_range'] = (400, 2500)
+        self.randomization_params['weather']['fog_density_range'] = (0.0, 0.15)
+        self.randomization_params['weather']['cloud_density_range'] = (0.0, 0.7)
+
+        # Varied material properties
+        self.randomization_params['materials']['roughness_range'] = (0.2, 0.8)
+        self.randomization_params['materials']['metallic_range'] = (0.0, 0.7)
+
+    def randomize_sun_angle(self):
+        """Randomize sun angle to simulate different times of day"""
+        from omni.isaac.core import Light
+
+        sun_light = self.scene.GetLighting().GetDistantLights()[0]
+
+        # Random sun elevation angle (20-70 degrees)
+        elevation = random.uniform(20, 70) * np.pi / 180
+        # Random azimuth angle (0-360 degrees)
+        azimuth = random.uniform(0, 360) * np.pi / 180
+
+        # Convert to quaternion
+        x = np.sin(elevation) * np.sin(azimuth)
+        y = np.sin(elevation) * np.cos(azimuth)
+        z = np.cos(elevation)
+        w = 0
+
+        sun_light.SetCameraPose(x, y, z, w)
+```
+
+### 11.2.2 Ground Truth Generation
+
+**Example: Ground Truth Data Generation**
+
+```pythonimport numpy as np
+from isaacsim import SimulationApp
+from omni.isaac.core import World
+from omni.isaac.core.utils.nucleus import get_current_stage
+
+class GroundTruthGenerator:
+    def __init__(self, scene):
+        self.scene = scene
+        self.ground_truth_dir = "synthetic_data/ground_truth"
+
+        # Ground truth types to generate
+        self.gt_types = [
+            'semantic_segmentation',
+            'instance_segmentation',
+            'depth',
+            'normal',
+            'optical_flow',
+            'bounding_boxes',
+            'keypoints',
+            'robot_state'
+        ]
+
+    def generate_all_ground_truth(self, frame_number):
+        """Generate all types of ground truth data"""
+        gt_data = {}
+
+        for gt_type in self.gt_types:
+            if gt_type == 'semantic_segmentation':
+                gt_data[gt_type] = self.generate_semantic_segmentation()
+            elif gt_type == 'instance_segmentation':
+                gt_data[gt_type] = self.generate_instance_segmentation()
+            elif gt_type == 'depth':
+                gt_data[gt_type] = self.generate_depth_data()
+            elif gt_type == 'normal':
+                gt_data[gt_type] = self.generate_normal_data()
+            elif gt_type == 'bounding_boxes':
+                gt_data[gt_type] = self.generate_bounding_boxes()
+            elif gt_type == 'robot_state':
+                gt_data[gt_type] = self.generate_robot_state()
+
+        # Save ground truth data
+        self.save_ground_truth(gt_data, frame_number)
+
+        return gt_data
+
+    def generate_semantic_segmentation(self):
+        """Generate semantic segmentation ground truth"""
+        from omni.isaac.core.utils.nucleus import get_prims
+
+        # Get all objects in scene
+        prims = get_prims()
+
+        # Create semantic segmentation map
+        segmentation_map = np.zeros((1080, 1920), dtype=np.uint8)
+
+        # Object class mapping
+        class_mapping = {
+            'ground_plane': 0,
+            'building': 1,
+            'vehicle': 2,
+            'robot': 3,
+            'obstacle': 4,
+            'person': 5,
+            'vegetation': 6,
+            'sky': 7
+        }
+
+        for prim in prims:
+            class_name = self.get_object_class(prim.GetName())
+            if class_name in class_mapping:
+                # Get object's 2D projection
+                projection = self.get_object_projection(prim)
+                # Apply to segmentation map
+                mask = self.project_to_image(prim, projection)
+                segmentation_map[mask == 1] = class_mapping[class_name]
+
+        return segmentation_map
+
+    def generate_instance_segmentation(self):
+        """Generate instance segmentation ground truth"""
+        from omni.isaac.core.utils.nucleus import get_prims
+
+        prims = get_prims()
+
+        # Create instance segmentation map
+        instance_map = np.zeros((1080, 1920), dtype=np.uint16)
+
+        for i, prim in enumerate(prims):
+            projection = self.get_object_projection(prim)
+            mask = self.project_to_image(prim, projection)
+            instance_map[mask == 1] = i + 1  # Instance IDs start from 1
+
+        return instance_map
+
+    def generate_depth_data(self):
+        """Generate depth ground truth"""
+        from omni.isaac.core. import Camera
+
+        cameras = self.scene.GetCameras()
+        depth_data = {}
+
+        for camera in cameras:
+            # Get camera parameters
+            intrinsics = camera.GetIntrinsics()
+
+            # Render depth buffer
+            depth_buffer = camera.GetDepthBuffer()
+
+            # Convert to depth image
+            depth_image = self.depth_buffer_to_image(depth_buffer, intrinsics)
+            depth_data[camera.GetName()] = depth_image
+
+        return depth_data
+
+    def generate_normal_data(self):
+        """Generate surface normal ground truth"""
+        from omni.isaac.core import Geometry
+
+        # Get all geometry in scene
+        geometries = self.scene.GetGeometries()
+
+        # Create normal map
+        normal_map = np.zeros((1080, 1920, 3), dtype=np.float32)
+
+        for geometry in geometries:
+            # Get mesh normals
+            mesh_normals = geometry.GetMeshNormals()
+
+            # Project normals to image space
+            normal_projection = self.project_normals_to_image(geometry, mesh_normals)
+
+            # Apply to normal map
+            mask = self.project_to_image(geometry, normal_projection['mask'])
+            normal_map[mask == 1] = normal_projection['normals'][mask == 1]
+
+        return normal_map
+
+    def generate_bounding_boxes(self):
+        """Generate bounding box ground truth"""
+        from omni.isaac.core.utils.nucleus import get_prims
+
+        prims = get_prims()
+
+        bounding_boxes = []
+
+        for prim in prims:
+            if self.should_detect_object(prim.GetName()):
+                # Get 3D bounding box
+                bbox_3d = prim.GetLocalBoundingBox()
+
+                # Project to 2D
+                bbox_2d = self.project_3d_bbox_to_2d(bbox_3d)
+
+                # Create bounding box record
+                bbox_record = {
+                    'class_name': self.get_object_class(prim.GetName()),
+                    'bbox_2d': bbox_2d,
+                    'bbox_3d': bbox_3d,
+                    'confidence': 1.0,
+                    'occlusion': self.calculate_occlusion(prim)
+                }
+
+                bounding_boxes.append(bbox_record)
+
+        return bounding_boxes
+
+    def generate_robot_state(self):
+        """Generate robot state ground truth"""
+        from omni.isaac.core.robots import Robot
+
+        robots = self.scene.GetRobots()
+        robot_states = []
+
+        for robot in robots:
+            # Get robot configuration
+            joint_positions = robot.GetJointPositions()
+            joint_velocities = robot.GetJointVelocities()
+
+            # Get robot pose
+            pose = robot.GetWorldPose()
+
+            # Create robot state record
+            robot_state = {
+                'robot_name': robot.GetName(),
+                'joint_positions': joint_positions,
+                'joint_velocities': joint_velocities,
+                'pose': pose,
+                'timestamp': self.get_current_time()
+            }
+
+            robot_states.append(robot_state)
+
+        return robot_states
+
+    def save_ground_truth(self, gt_data, frame_number):
+        """Save ground truth data to files"""
+        import os
+        import pickle
+        import json
+
+        os.makedirs(self.ground_truth_dir, exist_ok=True)
+
+        for gt_type, data in gt_data.items():
+            filename = f"{self.ground_truth_dir}/frame_{frame_number:06d}_{gt_type}"
+
+            if gt_type in ['semantic_segmentation', 'instance_segmentation']:
+                # Save as image
+                self.save_image(data, f"{filename}.png")
+            elif gt_type == 'depth':
+                # Save depth data
+                self.save_depth_data(data, f"{filename}.npy")
+            elif gt_type in ['bounding_boxes', 'robot_state']:
+                # Save as JSON
+                with open(f"{filename}.json", 'w') as f:
+                    json.dump(data, f, indent=2)
+            else:
+                # Save as pickle
+                with open(f"{filename}.pkl", 'wb') as f:
+                    pickle.dump(data, f)
+
+    def get_object_class(self, prim_name):
+        """Get object class from primitive name"""
+        # Extract class name from primitive name
+        if 'ground' in prim_name.lower():
+            return 'ground_plane'
+        elif 'building' in prim_name.lower() or 'wall' in prim_name.lower():
+            return 'building'
+        elif 'vehicle' in prim_name.lower() or 'car' in prim_name.lower():
+            return 'vehicle'
+        elif 'robot' in prim_name.lower():
+            return 'robot'
+        elif 'person' in prim_name.lower() or 'human' in prim_name.lower():
+            return 'person'
+        elif 'tree' in prim_name.lower() or 'grass' in prim_name.lower():
+            return 'vegetation'
+        else:
+            return 'obstacle'
+
+    def should_detect_object(self, prim_name):
+        """Determine if object should be detected"""
+        # Objects to exclude from detection
+        exclude_names = ['ground_plane', 'light', 'camera', 'sky']
+
+        return not any(exclude in prim_name.lower() for exclude in exclude_names)
+
+    # Helper methods for projection and rendering
+    def get_object_projection(self, prim):
+        """Get object's 2D projection"""
+        # Implementation would calculate object's screen space projection
+        pass
+
+    def project_to_image(self, prim, projection):
+        """Project 3D object to 2D image"""
+        # Implementation would project 3D coordinates to 2D image space
+        pass
+
+    def depth_buffer_to_image(self, depth_buffer, intrinsics):
+        """Convert depth buffer to depth image"""
+        # Implementation would convert depth buffer to actual depth values
+        pass
+
+    def project_normals_to_image(self, geometry, normals):
+        """Project mesh normals to image space"""
+        # Implementation would project 3D normals to 2D image space
+        pass
+
+    def project_3d_bbox_to_2d(self, bbox_3d):
+        """Project 3D bounding box to 2D coordinates"""
+        # Implementation would calculate 2D bounding box projection
+        pass
+
+    def calculate_occlusion(self, prim):
+        """Calculate object occlusion percentage"""
+        # Implementation would calculate how much of object is occluded
+        pass
+
+    def save_image(self, image_data, filename):
+        """Save image data to file"""
+        import cv2
+        cv2.imwrite(filename, image_data)
+
+    def save_depth_data(self, depth_data, filename):
+        """Save depth data to file"""
+        np.save(filename, depth_data)
+
+    def get_current_time(self):
+        """Get current simulation time"""
+        import time
+        return time.time()
+```
+
+## 11.3 AI Training Integration
+
+### 11.3.1 Synthetic Data Pipeline
+
+**Example: AI Training Data Pipeline**
+
+```pythonimport torch
+import torch.utils.data as data
+from torchvision import transforms
+import numpy as np
+
+class SyntheticDataLoader(data.Dataset):
+    def __init__(self, gt_data_dir, transform=None, target_transform=None):
+        self.gt_data_dir = gt_data_dir
+        self.transform = transform
+        self.target_transform = target_transform
+
+        # Find all frame directories
+        self.frame_dirs = [d for d in os.listdir(gt_data_dir)
+                            if os.path.isdir(os.path.join(gt_data_dir, d))]
+        self.frame_dirs.sort()
+
+        # Ground truth types to load
+        self.gt_types = ['rgb', 'semantic_segmentation', 'depth', 'bounding_boxes']
+
+    def __len__(self):
+        return len(self.frame_dirs)
+
+    def __getitem__(self, idx):
+        frame_dir = os.path.join(self.gt_data_dir, self.frame_dirs[idx])
+
+        # Load all ground truth data for this frame
+        data = {}
+        for gt_type in self.gt_types:
+            data[gt_type] = self.load_ground_truth(frame_dir, gt_type)
+
+        # Apply transforms
+        if self.transform:
+            data['rgb'] = self.transform(data['rgb'])
+
+        if self.target_transform:
+            if 'semantic_segmentation' in data:
+                data['semantic_segmentation'] = self.target_transform(data['semantic_segmentation'])
+            if 'depth' in data:
+                data['depth'] = self.target_transform(data['depth'])
+
+        return data
+
+    def load_ground_truth(self, frame_dir, gt_type):
+        """Load specific ground truth type"""
+        if gt_type == 'rgb':
+            return self.load_image(frame_dir, 'rgb')
+        elif gt_type == 'semantic_segmentation':
+            return self.load_segmentation(frame_dir, 'semantic_segmentation')
+        elif gt_type == 'depth':
+            return self.load_depth(frame_dir, 'depth')
+        elif gt_type == 'bounding_boxes':
+            return self.load_bounding_boxes(frame_dir, 'bounding_boxes')
+        else:
+            return None
+
+    def load_image(self, frame_dir, image_type):
+        """Load RGB image"""
+        import cv2
+        image_path = os.path.join(frame_dir, f"frame_{self.frame_dirs.index(os.path.basename(frame_dir)):06d}_rgb.png")
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return image
+
+    def load_segmentation(self, frame_dir, seg_type):
+        """Load segmentation mask"""
+        import cv2
+        seg_path = os.path.join(frame_dir, f"frame_{self.frame_dirs.index(os.path.basename(frame_dir)):06d}_{seg_type}.png")
+        mask = cv2.imread(seg_path, cv2.IMREAD_GRAYSCALE)
+        return mask
+
+    def load_depth(self, frame_dir, depth_type):
+        """Load depth data"""
+        import numpy as np
+        depth_path = os.path.join(frame_dir, f"frame_{self.frame_dirs.index(os.path.basename(frame_dir)):06d}_{depth_type}.npy")
+        depth = np.load(depth_path)
+        return depth
+
+    def load_bounding_boxes(self, frame_dir, bbox_type):
+        """Load bounding boxes"""
+        import json
+        bbox_path = os.path.join(frame_dir, f"frame_{self.frame_dirs.index(os.path.basename(frame_dir)):06d}_{bbox_type}.json")
+        with open(bbox_path, 'r') as f:
+            bboxes = json.load(f)
+        return bboxes
+
+# Training pipeline for computer vision models
+class VisionTrainingPipeline:
+    def __init__(self, gt_data_dir):
+        self.gt_data_dir = gt_data_dir
+
+        # Data transforms
+        self.image_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
+        ])
+
+        self.target_transform = transforms.Compose([
+            transforms.ToTensor()
+        ])
+
+    def create_dataloader(self, batch_size=8, shuffle=True, num_workers=4):
+        """Create data loader for training"""
+        dataset = SyntheticDataLoader(
+            self.gt_data_dir,
+            transform=self.image_transform,
+            target_transform=self.target_transform
+        )
+
+        return data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers
+        )
+
+# Training loop example
+def train_vision_model():
+    """Train computer vision model with synthetic data"""
+    gt_data_dir = "synthetic_data/ground_truth"
+
+    # Create data loader
+    pipeline = VisionTrainingPipeline(gt_data_dir)
+    train_loader = pipeline.create_dataloader(batch_size=4)
+
+    # Initialize model (example: segmentation model)
+    model = SegmentationModel(num_classes=8)
+
+    # Training loop
+    for epoch in range(100):
+        for batch in train_loader:
+            images = batch['rgb']
+            targets = batch['semantic_segmentation']
+
+            # Forward pass
+            outputs = model(images)
+            loss = calculate_loss(outputs, targets)
+
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+            print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
+
+def calculate_loss(outputs, targets):
+    """Calculate training loss"""
+    import torch.nn.functional as F
+
+    # Use CrossEntropyLoss for segmentation
+    criterion = torch.nn.CrossEntropyLoss()
+    return criterion(outputs, targets)
+
+# Class for model training evaluation
+class ModelEvaluator:
+    def __init__(self, model, test_loader):
+        self.model = model
+        self.test_loader = test_loader
+
+    def evaluate(self):
+        """Evaluate model performance"""
+        self.model.eval()
+
+        total_loss = 0.0
+        total_samples = 0
+        iou_scores = []
+
+        with torch.no_grad():
+            for batch in self.test_loader:
+                images = batch['rgb']
+                targets = batch['semantic_segmentation']
+
+                outputs = self.model(images)
+                loss = calculate_loss(outputs, targets)
+
+                total_loss += loss.item()
+                total_samples += images.size(0)
+
+                # Calculate IoU for segmentation
+                iou = self.calculate_iou(outputs, targets)
+                iou_scores.append(iou)
+
+        avg_loss = total_loss / len(self.test_loader)
+        avg_iou = np.mean(iou_scores)
+
+        print(f"Test Loss: {avg_loss:.4f}, Mean IoU: {avg_iou:.4f}")
+        return avg_loss, avg_iou
+
+    def calculate_iou(self, predictions, targets):
+        """Calculate Intersection over Union"""
+        # Convert predictions to class indices
+        pred_classes = torch.argmax(predictions, dim=1)
+
+        # Calculate IoU for each class
+        intersection = (pred_classes == targets).float().sum((1, 2))
+        union = ((pred_classes == targets) | (pred_classes != targets)).float().sum((1, 2))
+
+        iou = intersection / (union + 1e-6)
+        return iou.mean().item()
+```
+
+## Summary
+
+This chapter explored NVIDIA Isaac Sim's capabilities for advanced robotics simulation and synthetic data generation. Isaac Sim's integration with AI training pipelines and domain randomization capabilities make it an essential tool for modern robotics development.
+
+Key takeaways:
+- Isaac Sim provides photorealistic simulation environments
+- Domain randomization is crucial for robust AI training
+- Synthetic data generation accelerates model training
+- Ground truth automation ensures accurate labeling
+- Integration with AI training pipelines is seamless
+- Cloud deployment enables scalable simulation

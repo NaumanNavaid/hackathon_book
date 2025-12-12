@@ -1,0 +1,1061 @@
+---
+title: "Chapter 15 : Path Planning Algorithms"
+part: 4
+chapter: 16
+difficulty: "advanced"
+prerequisites: ["chapter-15-slam-vslam-navigation", "chapter-14-sensor-fusion-state-estimation"]
+estimatedTime: 60
+objectives:
+  - "Master classical path planning algorithms"
+  - "Implement sampling-based planners"
+  - "Develop trajectory optimization techniques"
+  - "Apply planning to real robotic systems"
+---
+
+# Chapter 15: Path Planning Algorithms
+
+## 15.1 Path Planning Fundamentals
+
+### 15.1.1 The Path Planning Problem
+
+Path planning finds a collision-free path from start to goal in a configuration space while optimizing criteria like shortest distance, smoothness, or execution time.
+
+:::info
+Path planning differs from navigation in that it computes the geometric path, while navigation includes real-time control to follow the path. Good path planning considers both global optimality and local execution feasibility.
+:::
+
+### 15.1.2 Configuration Space
+
+Configuration space (C-space) represents all possible robot configurations:
+
+```python
+class ConfigurationSpace:
+    def __init__(self, robot_dimensions, workspace_bounds):
+        self.robot_width = robot_dimensions['width']
+        self.robot_height = robot_dimensions['height']
+        self.workspace_bounds = workspace_bounds  # [xmin, ymin, xmax, ymax]
+
+        # Configuration space resolution
+        self.resolution = 0.05  # 5cm grid
+
+        # Grid dimensions
+        self.width = int((workspace_bounds[2] - workspace_bounds[0]) / self.resolution)
+        self.height = int((workspace_bounds[3] - workspace_bounds[1]) / self.resolution)
+
+        # Occupancy grid
+        self.occupancy_grid = np.zeros((self.width, self.height), dtype=np.uint8)
+        self.obstacles = []
+
+    def add_obstacle(self, obstacle):
+        """Add obstacle to configuration space"""
+        self.obstacles.append(obstacle)
+        self._update_occupancy_grid(obstacle)
+
+    def _update_occupancy_grid(self, obstacle):
+        """Update occupancy grid for Minkowski sum with robot footprint"""
+        # Get obstacle pixels
+        obstacle_pixels = self._world_to_grid(obstacle.get_pixels())
+
+        # Expand for robot footprint (Minkowski sum)
+        robot_radius_pixels = int(max(self.robot_width, self.robot_height) / (2 * self.resolution))
+
+        for pixel in obstacle_pixels:
+            x, y = pixel
+            # Draw filled circle for robot footprint
+            for dx in range(-robot_radius_pixels, robot_radius_pixels + 1):
+                for dy in range(-robot_radius_pixels, robot_radius_pixels + 1):
+                    if dx*dx + dy*dy <= robot_radius_pixels*robot_radius_pixels:
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < self.width and 0 <= ny < self.height:
+                            self.occupancy_grid[nx, ny] = 1
+
+    def world_to_grid(self, world_point):
+        """Convert world coordinates to grid coordinates"""
+        x = int((world_point[0] - self.workspace_bounds[0]) / self.resolution)
+        y = int((world_point[1] - self.workspace_bounds[1]) / self.resolution)
+        return x, y
+
+    def grid_to_world(self, grid_point):
+        """Convert grid coordinates to world coordinates"""
+        x = grid_point[0] * self.resolution + self.workspace_bounds[0]
+        y = grid_point[1] * self.resolution + self.workspace_bounds[1]
+        return np.array([x, y])
+
+    def is_collision_free(self, position):
+        """Check if position is collision-free"""
+        grid_point = self.world_to_grid(position)
+
+        if not self._is_valid_grid(grid_point):
+            return False
+
+        return self.occupancy_grid[grid_point[0], grid_point[1]] == 0
+
+    def _is_valid_grid(self, grid_point):
+        """Check if grid point is within bounds"""
+        x, y = grid_point
+        return 0 <= x < self.width and 0 <= y < self.height
+
+    def is_path_collision_free(self, path):
+        """Check if entire path is collision-free"""
+        for position in path:
+            if not self.is_collision_free(position):
+                return False
+
+        return True
+```
+
+## 15.2 Classical Planning Algorithms
+
+### 15.2.1 Dijkstra's Algorithm
+
+Dijkstra's algorithm finds the shortest path in weighted graphs:
+
+```python
+class DijkstraPlanner:
+    def __init__(self, config_space):
+        self.config_space = config_space
+        self.grid = config_space.occupancy_grid
+        self.width = config_space.width
+        self.height = config_space.height
+
+    def plan_path(self, start, goal):
+        """Plan path using Dijkstra's algorithm"""
+        start_grid = self.config_space.world_to_grid(start)
+        goal_grid = self.config_space.world_to_grid(goal)
+
+        if not self._is_valid_start_goal(start_grid, goal_grid):
+            return None
+
+        # Initialize distances
+        distances = np.full((self.width, self.height), np.inf)
+        distances[start_grid[0], start_grid[1]] = 0
+
+        # Parent tracking
+        parents = np.zeros((self.width, self.height, 2), dtype=int)
+        parents[start_grid[0], start_grid[1]] = start_grid
+
+        # Priority queue (min-heap)
+        open_set = []
+        heapq.heappush(open_set, (0, start_grid))
+
+        # Visited set
+        closed_set = set()
+
+        while open_set:
+            # Get node with minimum distance
+            current_distance, current_grid = heapq.heappop(open_set)
+
+            if current_grid == goal_grid:
+                # Goal reached - reconstruct path
+                return self._reconstruct_path(parents, start_grid, goal_grid)
+
+            closed_set.add(current_grid)
+
+            # Explore neighbors
+            for neighbor in self._get_neighbors(current_grid):
+                if neighbor in closed_set:
+                    continue
+
+                # Edge cost (uniform for grid)
+                edge_cost = 1.0
+                new_distance = current_distance + edge_cost
+
+                if new_distance < distances[neighbor[0], neighbor[1]]:
+                    distances[neighbor[0], neighbor[1]] = new_distance
+                    parents[neighbor[0], neighbor[1]] = current_grid
+                    heapq.heappush(open_set, (new_distance, neighbor))
+
+        return None  # No path found
+
+    def _get_neighbors(self, grid_point):
+        """Get valid neighboring grid cells"""
+        neighbors = []
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 4-connected
+
+        for dx, dy in directions:
+            neighbor = (grid_point[0] + dx, grid_point[1] + dy)
+            if self._is_valid_neighbor(neighbor):
+                neighbors.append(neighbor)
+
+        return neighbors
+
+    def _is_valid_neighbor(self, grid_point):
+        """Check if neighbor is valid and collision-free"""
+        x, y = grid_point
+        return (0 <= x < self.width and
+                0 <= y < self.height and
+                self.grid[x, y] == 0)
+
+    def _is_valid_start_goal(self, start_grid, goal_grid):
+        """Validate start and goal positions"""
+        return (self._is_valid_neighbor(start_grid) and
+                self._is_valid_neighbor(goal_grid))
+
+    def _reconstruct_path(self, parents, start_grid, goal_grid):
+        """Reconstruct path from parent pointers"""
+        path = [goal_grid]
+        current = goal_grid
+
+        while not np.array_equal(current, start_grid):
+            current = tuple(parents[current[0], current[1]])
+            path.append(current)
+
+        path.reverse()
+
+        # Convert to world coordinates
+        world_path = [self.config_space.grid_to_world(grid) for grid in path]
+        return world_path
+```
+
+### 15.2.2 A* Algorithm
+
+A* algorithm uses heuristics to guide search more efficiently:
+
+```python
+class AStarPlanner:
+    def __init__(self, config_space, heuristic_weight=1.0):
+        self.config_space = config_space
+        self.grid = config_space.occupancy_grid
+        self.width = config_space.width
+        self.height = config_space.height
+        self.heuristic_weight = heuristic_weight
+
+        # Precompute heuristic
+        self._precompute_heuristic()
+
+    def plan_path(self, start, goal):
+        """Plan path using A* algorithm"""
+        start_grid = self.config_space.world_to_grid(start)
+        goal_grid = self.config_space.world_to_grid(goal)
+
+        if not self._is_valid_start_goal(start_grid, goal_grid):
+            return None
+
+        # Node structure: (f_cost, g_cost, grid_point, parent)
+        open_set = []
+        start_h = self._heuristic(start_grid, goal_grid)
+        heapq.heappush(open_set, (start_h, 0, start_grid, None))
+
+        # Distance to goal
+        distances = np.full((self.width, self.height), np.inf)
+        distances[start_grid[0], start_grid[1]] = 0
+
+        # Closed set
+        closed_set = set()
+
+        while open_set:
+            # Get node with minimum f_cost
+            f_cost, g_cost, current_grid, parent = heapq.heappop(open_set)
+
+            if current_grid == goal_grid:
+                # Goal reached - reconstruct path
+                return self._reconstruct_path(parent, start_grid, goal_grid)
+
+            closed_set.add(current_grid)
+
+            # Explore neighbors
+            for neighbor in self._get_neighbors(current_grid):
+                if neighbor in closed_set:
+                    continue
+
+                # Movement cost
+                edge_cost = self._edge_cost(current_grid, neighbor)
+                tentative_g_cost = g_cost + edge_cost
+
+                if tentative_g_cost < distances[neighbor[0], neighbor[1]]:
+                    distances[neighbor[0], neighbor[1]] = tentative_g_cost
+
+                    h_cost = self._heuristic(neighbor, goal_grid)
+                    f_cost = tentative_g_cost + self.heuristic_weight * h_cost
+
+                    heapq.heappush(open_set, (f_cost, tentative_g_cost, neighbor, current_grid))
+
+        return None  # No path found
+
+    def _heuristic(self, grid1, grid2):
+        """A* heuristic (Euclidean distance)"""
+        # Use precomputed values for speed
+        return self.precomputed_heuristic[grid1[0], grid1[1], grid2[0], grid2[1]]
+
+    def _precompute_heuristic(self):
+        """Precompute heuristic values for all grid pairs"""
+        self.precomputed_heuristic = np.zeros((self.width, self.height, self.width, self.height))
+
+        for x1 in range(self.width):
+            for y1 in range(self.height):
+                for x2 in range(self.width):
+                    for y2 in range(self.height):
+                        dx = abs(x2 - x1)
+                        dy = abs(y2 - y1)
+                        self.precomputed_heuristic[x1, y1, x2, y2] = np.sqrt(dx*dx + dy*dy)
+
+    def _edge_cost(self, from_grid, to_grid):
+        """Calculate edge cost between grid cells"""
+        dx = abs(to_grid[0] - from_grid[0])
+        dy = abs(to_grid[1] - from_grid[1])
+
+        if dx == 1 and dy == 1:
+            return 1.414  # Diagonal movement
+        else:
+            return 1.0  # Cardinal movement
+
+class ThetaStarPlanner:
+    def __init__(self, config_space):
+        self.config_space = config_space
+        self.grid = config_space.occupancy_grid
+        self.width = config_space.width
+        self.height = config_space.height
+
+    def plan_path(self, start, goal):
+        """Plan path considering robot orientation"""
+        start_grid = self.config_space.world_to_grid(start)
+        start_theta = int(start[2] * 180 / np.pi) % 360
+        goal_grid = self.config_space.world_to_grid(goal)
+        goal_theta = int(goal[2] * 180 / np.pi) % 360
+
+        # 3D state space: (x, y, theta)
+        start_state = (start_grid[0], start_grid[1], start_theta)
+        goal_state = (goal_grid[0], goal_grid[1], goal_theta)
+
+        # Priority queue: (f_cost, g_cost, state, parent)
+        open_set = []
+        start_h = self._heuristic_3d(start_state, goal_state)
+        heapq.heappush(open_set, (start_h, 0, start_state, None))
+
+        # Visited states
+        visited = set()
+        visited.add(start_state)
+
+        # Parent tracking
+        parents = {}
+
+        while open_set:
+            f_cost, g_cost, current_state, parent = heapq.heappop(open_set)
+
+            if self._is_goal(current_state, goal_state):
+                return self._reconstruct_path_3d(parents, start_state, goal_state)
+
+            # Generate successor states
+            successors = self._get_successors_3d(current_state)
+
+            for successor_state, action_cost in successors:
+                if successor_state not in visited:
+                    visited.add(successor_state)
+
+                    tentative_g_cost = g_cost + action_cost
+                    h_cost = self._heuristic_3d(successor_state, goal_state)
+                    f_cost = tentative_g_cost + h_cost
+
+                    heapq.heappush(open_set, (f_cost, tentative_g_cost, successor_state, current_state))
+                    parents[successor_state] = current_state
+
+        return None
+
+    def _get_successors_3d(self, state):
+        """Get successor states in 3D configuration space"""
+        successors = []
+        x, y, theta = state
+
+        # Position movements (4-connected)
+        movements = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+        for dx, dy in movements:
+            new_x, new_y = x + dx, y + dy
+            new_theta = theta
+
+            if self._is_valid_position(new_x, new_y):
+                successors.append(((new_x, new_y, new_theta), 1.0))
+
+        # Orientation changes (45-degree steps)
+        angle_steps = [45, -45]
+        for dtheta in angle_steps:
+            new_theta = (theta + dtheta) % 360
+            successors.append(((x, y, new_theta), 0.5))
+
+        return successors
+
+    def _heuristic_3d(self, state1, state2):
+        """3D heuristic combining position and orientation"""
+        x1, y1, theta1 = state1
+        x2, y2, theta2 = state2
+
+        # Position heuristic
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        position_cost = np.sqrt(dx*dx + dy*dy)
+
+        # Orientation heuristic (normalized to [0, 1])
+        theta_diff = abs(theta2 - theta1)
+        theta_diff = min(theta_diff, 360 - theta_diff)
+        orientation_cost = theta_diff / 360.0
+
+        # Weighted combination
+        return position_cost + 0.1 * orientation_cost
+```
+
+## 15.3 Sampling-Based Planners
+
+### 15.3.1 Probabilistic Roadmaps (PRM)
+
+PRM builds a roadmap of collision-free paths:
+
+```python
+class ProbabilisticRoadmap:
+    def __init__(self, config_space, num_samples=1000, connection_radius=2.0):
+        self.config_space = config_space
+        self.num_samples = num_samples
+        self.connection_radius = connection_radius
+
+        # Roadmap structure
+        self.nodes = []  # List of (x, y) positions
+        self.edges = []  # List of (node1, node2, distance) edges
+
+    def build_roadmap(self):
+        """Build probabilistic roadmap"""
+        print("Building PRM roadmap...")
+
+        # Step 1: Generate random collision-free samples
+        self._generate_samples()
+
+        # Step 2: Connect nearby samples
+        self._connect_samples()
+
+        print(f"Roadmap built with {len(self.nodes)} nodes and {len(self.edges)} edges")
+
+    def _generate_samples(self):
+        """Generate random collision-free samples"""
+        samples_generated = 0
+        attempts = 0
+        max_attempts = self.num_samples * 10
+
+        while samples_generated < self.num_samples and attempts < max_attempts:
+            # Generate random sample
+            x = np.random.uniform(self.config_space.workspace_bounds[0],
+                               self.config_space.workspace_bounds[2])
+            y = np.random.uniform(self.config_space.workspace_bounds[1],
+                               self.config_space.workspace_bounds[3])
+
+            # Check if collision-free
+            if self.config_space.is_collision_free((x, y)):
+                self.nodes.append((x, y))
+                samples_generated += 1
+
+            attempts += 1
+
+    def _connect_samples(self):
+        """Connect nearby samples in roadmap"""
+        for i in range(len(self.nodes)):
+            for j in range(i + 1, len(self.nodes)):
+                # Calculate Euclidean distance
+                distance = np.linalg.norm(np.array(self.nodes[i]) - np.array(self.nodes[j]))
+
+                if distance <= self.connection_radius:
+                    # Check if connection is collision-free
+                    if self._is_path_collision_free(self.nodes[i], self.nodes[j]):
+                        self.edges.append((i, j, distance))
+                        self.edges.append((j, i, distance))
+
+    def _is_path_collision_free(self, point1, point2):
+        """Check if straight-line path between points is collision-free"""
+        # Sample points along the line
+        num_samples = int(np.linalg.norm(np.array(point2) - np.array(point1)) / 0.05)
+
+        if num_samples < 2:
+            return self.config_space.is_collision_free(point1) and \
+                   self.config_space.is_collision_free(point2)
+
+        for t in np.linspace(0, 1, num_samples):
+            point = point1 + t * (np.array(point2) - np.array(point1))
+            if not self.config_space.is_collision_free(point):
+                return False
+
+        return True
+
+    def plan_path(self, start, goal):
+        """Find path using built roadmap"""
+        start_idx = self._find_nearest_node(start)
+        goal_idx = self._find_nearest_node(goal)
+
+        if start_idx is None or goal_idx is None:
+            return None
+
+        # Connect start and goal to roadmap
+        connected_edges = self._connect_to_roadmap(start, start_idx, goal, goal_idx)
+
+        if not connected_edges:
+            return None
+
+        # Find path using Dijkstra on roadmap graph
+        path_indices = self._find_path_in_graph(start_idx, goal_idx)
+
+        if path_indices is None:
+            return None
+
+        # Convert indices to positions
+        path = [self.nodes[idx] for idx in path_indices]
+
+        return path
+
+    def _find_nearest_node(self, point):
+        """Find nearest node in roadmap"""
+        min_distance = float('inf')
+        nearest_idx = None
+
+        for i, node in enumerate(self.nodes):
+            distance = np.linalg.norm(np.array(node) - np.array(point))
+            if distance < min_distance:
+                min_distance = distance
+                nearest_idx = i
+
+        return nearest_idx if min_distance < self.connection_radius else None
+
+    def _connect_to_roadmap(self, start, start_idx, goal, goal_idx):
+        """Connect start and goal points to roadmap"""
+        # Connect start to nearest node
+        if start_idx is not None:
+            if self.config_space.is_path_collision_free(start, self.nodes[start_idx]):
+                self.nodes.append(start)
+                new_start_idx = len(self.nodes) - 1
+                self.edges.append((new_start_idx, start_idx,
+                                np.linalg.norm(np.array(start) - np.array(self.nodes[start_idx]))))
+            else:
+                return False
+
+        # Connect goal to nearest node
+        if goal_idx is not None:
+            if self.config_space.is_path_collision_free(goal, self.nodes[goal_idx]):
+                self.nodes.append(goal)
+                new_goal_idx = len(self.nodes) - 1
+                self.edges.append((goal_idx, new_goal_idx,
+                                np.linalg.norm(np.array(goal) - np.array(self.nodes[goal_idx]))))
+            else:
+                return False
+
+        return True
+
+    def _find_path_in_graph(self, start_idx, goal_idx):
+        """Find shortest path in graph using Dijkstra"""
+        num_nodes = len(self.nodes)
+        if num_nodes == 0:
+            return None
+
+        # Build adjacency list
+        adjacency = [[] for _ in range(num_nodes)]
+        for edge in self.edges:
+            adjacency[edge[0]].append((edge[1], edge[2]))
+            adjacency[edge[1]].append((edge[0], edge[2]))
+
+        # Dijkstra's algorithm
+        distances = np.full(num_nodes, np.inf)
+        distances[start_idx] = 0
+
+        parents = np.full(num_nodes, -1)
+        visited = [False] * num_nodes
+
+        pq = [(0, start_idx)]
+
+        while pq:
+            dist, current = heapq.heappop(pq)
+
+            if visited[current]:
+                continue
+
+            visited[current] = True
+
+            if current == goal_idx:
+                # Reconstruct path
+                path = []
+                node = current
+                while node != -1:
+                    path.append(node)
+                    node = parents[node]
+                return path[::-1]
+
+            for neighbor, edge_dist in adjacency[current]:
+                new_dist = dist + edge_dist
+                if new_dist < distances[neighbor]:
+                    distances[neighbor] = new_dist
+                    parents[neighbor] = current
+                    heapq.heappush(pq, (new_dist, neighbor))
+
+        return None  # No path found
+```
+
+### 15.3.2 Rapidly-exploring Random Trees (RRT)
+
+RRT rapidly explores configuration space with random sampling:
+
+```python
+class RRTPlanner:
+    def __init__(self, config_space, max_iterations=5000, step_size=0.5):
+        self.config_space = config_space
+        self.max_iterations = max_iterations
+        self.step_size = step_size
+
+        # Tree structure
+        self.tree = []
+        self.parent = []
+
+    def plan_path(self, start, goal):
+        """Plan path using RRT"""
+        # Initialize tree with start point
+        self.tree = [start]
+        self.parent = [-1]
+
+        goal_tolerance = self.step_size
+
+        for iteration in range(self.max_iterations):
+            # Sample random point
+            if np.random.random() < 0.1:  # 10% chance to sample goal
+                random_point = goal
+            else:
+                random_point = self._sample_random_point()
+
+            # Find nearest node in tree
+            nearest_idx = self._find_nearest_node(random_point)
+            nearest_node = self.tree[nearest_idx]
+
+            # Extend tree towards random point
+            new_node = self._extend_towards(nearest_node, random_point)
+
+            # Check if extension is valid
+            if self.config_space.is_collision_free(new_node):
+                # Add to tree
+                self.tree.append(new_node)
+                self.parent.append(nearest_idx)
+
+                # Check if goal reached
+                if np.linalg.norm(np.array(new_node) - np.array(goal)) < goal_tolerance:
+                    return self._reconstruct_path_to_root(len(self.tree) - 1)
+
+        return None  # No path found
+
+    def _sample_random_point(self):
+        """Sample random point in configuration space"""
+        x = np.random.uniform(self.config_space.workspace_bounds[0],
+                               self.config_space.workspace_bounds[2])
+        y = np.random.uniform(self.config_space.workspace_bounds[1],
+                               self.config_space.workspace_bounds[3])
+        return np.array([x, y])
+
+    def _find_nearest_node(self, point):
+        """Find nearest node in tree"""
+        min_distance = float('inf)
+        nearest_idx = 0
+
+        for i, node in enumerate(self.tree):
+            distance = np.linalg.norm(np.array(node) - np.array(point))
+            if distance < min_distance:
+                min_distance = distance
+                nearest_idx = i
+
+        return nearest_idx
+
+    def _extend_towards(self, from_node, to_point):
+        """Extend tree from node towards point"""
+        direction = np.array(to_point) - np.array(from_node)
+        distance = np.linalg.norm(direction)
+
+        if distance <= self.step_size:
+            return to_point
+        else:
+            # Normalize and step
+            direction = direction / distance
+            return np.array(from_node) + direction * self.step_size
+
+    def _reconstruct_path_to_root(self, node_idx):
+        """Reconstruct path from node to root"""
+        path = []
+        current = node_idx
+
+        while current != -1:
+            path.append(self.tree[current])
+            current = self.parent[current]
+
+        return path[::-1]
+
+class RRTStarPlanner(RRTPlanner):
+    def __init__(self, config_space, max_iterations=5000, step_size=0.5, rewire_radius=1.0):
+        super().__init__(config_space, max_iterations, step_size)
+        self.rewire_radius = rewire_radius
+
+    def plan_path(self, start, goal):
+        """Plan path using RRT* with rewiring"""
+        # Initialize tree with start point
+        self.tree = [start]
+        self.parent = [-1]
+
+        # Track costs
+        self.costs = [0.0]
+
+        goal_tolerance = self.step_size
+
+        for iteration in range(self.max_iterations):
+            # Sample random point
+            if np.random.random() < 0.1:
+                random_point = goal
+            else:
+                random_point = self._sample_random_point()
+
+            # Find nearest node
+            nearest_idx = self._find_nearest_node(random_point)
+            nearest_node = self.tree[nearest_idx]
+            nearest_cost = self.costs[nearest_idx]
+
+            # Extend tree
+            new_node = self._extend_towards(nearest_node, random_point)
+            new_idx = len(self.tree)
+
+            if self.config_space.is_collision_free(new_node):
+                # Calculate cost
+                edge_cost = np.linalg.norm(np.array(new_node) - np.array(nearest_node))
+                new_cost = nearest_cost + edge_cost
+
+                # Add to tree
+                self.tree.append(new_node)
+                self.parent.append(nearest_idx)
+                self.costs.append(new_cost)
+
+                # Check if goal reached
+                if np.linalg.norm(np.array(new_node) - np.array(goal)) < goal_tolerance:
+                    return self._reconstruct_path_to_root(new_idx)
+
+                # Rewiring step
+                self._rewire_tree(new_idx)
+
+        return None
+
+    def _rewire_tree(self, new_node_idx):
+        """Rewire tree for optimal cost paths"""
+        new_node = self.tree[new_node_idx]
+
+        # Find nodes within rewire radius
+        for i, node in enumerate(self.tree):
+            if i == new_node_idx:
+                continue
+
+            distance = np.linalg.norm(np.array(node) - np.array(new_node))
+
+            if distance < self.rewire_radius:
+                # Calculate new cost through this node
+                edge_cost = distance
+                new_cost = self.costs[i] + edge_cost
+
+                # Rewire if better path
+                if new_cost < self.costs[new_node_idx]:
+                    self.parent[new_node_idx] = i
+                    self.costs[new_node_idx] = new_cost
+
+                    # Update costs of children
+                    self._update_children_costs(new_node_idx)
+
+    def _update_children_costs(self, parent_idx):
+        """Update costs of children after rewiring"""
+        parent_cost = self.costs[parent_idx]
+
+        for i, parent in enumerate(self.parent):
+            if parent == parent_idx:
+                edge_cost = np.linalg.norm(
+                    np.array(self.tree[i]) - np.array(self.tree[parent_idx])
+                )
+                self.costs[i] = parent_cost + edge_cost
+                self._update_children_costs(i)
+```
+
+## 15.4 Optimization-Based Planning
+
+### 15.4.1 Trajectory Optimization
+
+Optimize smooth trajectories for robot execution:
+
+```python
+class TrajectoryOptimizer:
+    def __init__(self, config_space):
+        self.config_space = config_space
+        self.dt = 0.1  # Time step
+        self.max_velocity = 2.0
+        self.max_acceleration = 1.0
+
+    def optimize_trajectory(self, path, initial_guess=None):
+        """Optimize smooth trajectory from waypoints"""
+        if len(path) < 2:
+            return path
+
+        # Create initial trajectory guess
+        if initial_guess is None:
+            trajectory = self._create_initial_trajectory(path)
+        else:
+            trajectory = initial_guess.copy()
+
+        # Optimization parameters
+        iterations = 100
+        learning_rate = 0.1
+
+        for iteration in range(iterations):
+            # Compute gradient
+            gradient = self._compute_gradient(trajectory, path)
+
+            # Update trajectory
+            trajectory = trajectory - learning_rate * gradient
+
+            # Apply constraints
+            trajectory = self._apply_constraints(trajectory)
+
+            # Check for collisions
+            if self._is_trajectory_collision_free(trajectory):
+                break
+
+        return trajectory
+
+    def _create_initial_trajectory(self, path):
+        """Create initial trajectory from waypoints"""
+        trajectory = []
+
+        for i in range(len(path) - 1):
+            start = path[i]
+            end = path[i + 1]
+
+            # Number of intermediate points
+            distance = np.linalg.norm(end - start)
+            num_points = max(2, int(distance / (self.max_velocity * self.dt)))
+
+            for t in np.linspace(0, 1, num_points):
+                # Linear interpolation
+                point = start + t * (end - start)
+                trajectory.append(point)
+
+        return np.array(trajectory)
+
+    def _compute_gradient(self, trajectory, path):
+        """Compute gradient of cost function"""
+        n_points = len(trajectory)
+        gradient = np.zeros_like(trajectory)
+
+        # Smoothness gradient
+        for i in range(1, n_points - 1):
+            # Second derivative
+            d2p = trajectory[i+1] - 2 * trajectory[i] + trajectory[i-1]
+
+            # Weight for smoothness
+            weight = 1.0
+            gradient[i] += 2 * weight * d2p
+
+        # Waypoint attraction gradient
+        waypoint_attraction_weight = 2.0
+
+        for i, point in enumerate(trajectory):
+            # Find nearest waypoint
+            min_dist = float('inf)
+            nearest_waypoint = None
+            waypoint_idx = 0
+
+            for j, waypoint in enumerate(path):
+                dist = np.linalg.norm(point - waypoint)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_waypoint = waypoint
+                    waypoint_idx = j
+
+            if min_dist > 0:
+                # Attract towards waypoint
+                direction = nearest_waypoint - point
+                gradient[i] += waypoint_attraction_weight * direction
+
+        return gradient
+
+    def _apply_constraints(self, trajectory):
+        """Apply velocity and acceleration constraints"""
+        n_points = len(trajectory)
+
+        for i in range(n_points):
+            # Velocity constraint
+            if i > 0:
+                velocity = (trajectory[i] - trajectory[i-1]) / self.dt
+                velocity_norm = np.linalg.norm(velocity)
+
+                if velocity_norm > self.max_velocity:
+                    velocity = velocity / velocity_norm * self.max_velocity
+                    trajectory[i] = trajectory[i-1] + velocity * self.dt
+
+            # Acceleration constraint
+            if i > 1:
+                acceleration = (trajectory[i] - 2*trajectory[i-1] + trajectory[i-2]) / (self.dt**2)
+                acc_norm = np.linalg.norm(acceleration)
+
+                if acc_norm > self.max_acceleration:
+                    acceleration = acceleration / acc_norm * self.max_acceleration
+                    trajectory[i] = 2*trajectory[i-1] - trajectory[i-2] + acceleration * (self.dt**2)
+
+        return trajectory
+
+    def _is_trajectory_collision_free(self, trajectory):
+        """Check if entire trajectory is collision-free"""
+        for point in trajectory:
+            if not self.config_space.is_collision_free(point):
+                return False
+        return True
+
+class CHOMPPlanner:
+    def __init__(self, config_space):
+        self.config_space = config_space
+        self.max_iterations = 100
+        self.tolerance = 0.1
+
+    def plan_with_chomp(self, start, goal):
+        """Plan path using CHOMP optimization"""
+        # Initial guess - straight line path
+        initial_path = self._straight_line_path(start, goal)
+
+        if not self.config_space.is_path_collision_free(initial_path):
+            # Try to find collision-free initial path
+            initial_path = self._find_initial_path(start, goal)
+
+        if initial_path is None:
+            return None
+
+        # Optimize path using CHOMP
+        optimized_path = self._optimize_path_chomp(initial_path, start, goal)
+
+        return optimized_path
+
+    def _optimize_path_chomp(self, path, start, goal):
+        """Optimize path using CHOMP algorithm"""
+        current_path = path.copy()
+
+        for iteration in range(self.max_iterations):
+            # Compute gradient
+            gradient = self._chomp_gradient(current_path, start, goal)
+
+            # Update path
+            current_path = current_path - 0.1 * gradient
+
+            # Check collision constraints
+            max_violation = self._check_collision_constraints(current_path)
+
+            if max_violation < self.tolerance:
+                break
+
+            # Project back into collision-free space
+            current_path = self._project_collision_free(current_path, max_violation)
+
+        return current_path
+
+    def _chomp_gradient(self, path, start, goal):
+        """Compute CHOMP gradient"""
+        n_points = len(path)
+        gradient = np.zeros_like(path)
+
+        # Obstacle gradient
+        for i, point in enumerate(path):
+            # Find nearest obstacle
+            nearest_obstacle, distance = self._find_nearest_obstacle(point)
+
+            if distance > 0:
+                # Gradient away from obstacle
+                direction = point - nearest_obstacle
+                norm = np.linalg.norm(direction)
+
+                if norm > 0:
+                    # Use potential field gradient
+                    influence_radius = 2.0
+                    if distance < influence_radius:
+                        gradient_magnitude = (1/distance - 1/influence_radius)
+                        gradient[i] += gradient_magnitude * direction / norm
+
+        # Smoothness gradient
+        for i in range(1, n_points - 1):
+            d2p = path[i+1] - 2 * path[i] + path[i-1]
+            gradient[i] += 2 * d2p
+
+        # Goal attraction gradient
+        for i in range(n_points):
+            # Progress towards goal along path
+            if i < n_points - 1:
+                remaining = path[-1] - path[i]
+                progress = (i + 1) / n_points
+                desired = path[i] + progress * remaining
+                gradient[i] += 2 * (desired - path[i])
+
+        # Start point constraint
+        gradient[0] += 10 * (start - path[0])
+
+        return gradient
+
+    def _find_nearest_obstacle(self, point):
+        """Find nearest obstacle point"""
+        min_distance = float('inf)
+        nearest_point = point.copy()
+
+        # Check grid cells in neighborhood
+        grid_x, grid_y = self.config_space.world_to_grid(point)
+        search_radius = 5
+
+        for dx in range(-search_radius, search_radius + 1):
+            for dy in range(-search_radius, search_radius + 1):
+                check_x, check_y = grid_x + dx, grid_y + dy
+
+                if (0 <= check_x < self.config_space.width and
+                    0 <= check_y < self.config_space.height and
+                    self.config_space.occupancy_grid[check_x, check_y] > 0):
+
+                    obstacle_point = self.config_space.grid_to_world((check_x, check_y))
+                    distance = np.linalg.norm(point - obstacle_point)
+
+                    if distance < min_distance:
+                        min_distance = distance
+                        nearest_point = obstacle_point.copy()
+
+        return nearest_point, min_distance
+```
+
+## Chapter Summary
+
+This chapter covered comprehensive path planning algorithms for robotics:
+
+### Key Concepts Covered
+1. **Configuration Space**: Mathematical representation of robot configurations
+2. **Classical Planners**: Dijkstra's algorithm and A* with heuristics
+3. **Sampling-Based Planners**: PRM and RRT/RRT* for high-dimensional spaces
+4. **Optimization-Based Planning**: CHOMP and trajectory optimization
+5. **Path Execution**: Control laws and trajectory following
+6. **Practical Considerations**: Computational efficiency and real-time constraints
+
+### Practical Implementations
+- Complete configuration space representation with Minkowski sum
+- A* planner with precomputed heuristics and Theta* variant
+- PRM with probabilistic sampling and connection strategies
+- RRT and RRT* with rewiring for optimal paths
+- Trajectory optimization with smoothness and dynamics constraints
+- CHOMP optimization with obstacle avoidance using potential fields
+
+### Next Steps
+With path planning expertise, you're ready for:
+- Part V: Embodied Intelligence & VLA (Chapters 17-20)
+- Vision-Language-Action models
+- Cognitive planning and decision making
+
+---
+
+## Glossary Terms
+
+**Term**: **Configuration Space**
+**Definition:** Set of all possible robot configurations, including position, orientation, and joint angles
+**Related:** **Degrees of Freedom**, **Configuration Obstacles**
+
+**Term**: **Minkowski Sum**
+**Definition:** Mathematical operation that computes the configuration space obstacle by expanding obstacles by robot shape
+**Related:** **Configuration Space**, **Collision Detection**
+
+**Term**: **Heuristic Function**
+**Definition:** Admissible estimate of cost from current state to goal in A* algorithm
+**Related:** **Admissibility**, **Consistency**
+
+**Term**: **Rapidly-exploring Random Tree (RRT)**
+**Definition:** Sampling-based planning algorithm that explores configuration space using random sampling and tree growth
+**Related:** **Probabilistic Roadmap**, **RRT***
+
+**Term**: **Potential Field**
+**Definition:** Gradient-based navigation method where obstacles exert repulsive forces and goal attracts robot
+**Related:** **Artificial Potential Fields**, **Navigation Functions**
+
+---
