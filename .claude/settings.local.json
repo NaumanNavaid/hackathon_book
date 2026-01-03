@@ -11,7 +11,8 @@
       "Bash(npm install:*)",
       "Bash(npm run build)",
       "Bash(npm start)",
-      "Bash(npm start:*)"
+      "Bash(npm start:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []
